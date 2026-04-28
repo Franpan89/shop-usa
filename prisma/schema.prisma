@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users    User[]
+  clients  Client[]
+  orders   Order[]
+  boxes    Box[]
+  expenses Expense[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  email     String   @unique
+  role      Role     @default(STAFF)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  STAFF
+}
+
+model Client {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  code      String
+  name      String
+  country   String
+  city      String
+  phone     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders    Order[]
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  boxId       String?
+  box         Box?     @relation(fields: [boxId], references: [id])
+  
+  orderDate   DateTime @default(now())
+  status      OrderStatus @default(PENDING)
+  totalAmount Float
+  balance     Float
+  productCount Int
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum OrderStatus {
+  PENDING
+  IN_TRANSIT
+  DELIVERED
+}
+
+model Box {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  internalId  String
+  size        String
+  status      BoxStatus @default(IN_TRANSIT)
+  country     String
+  totalWeight Float
+  
+  orders      Order[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum BoxStatus {
+  IN_TRANSIT
+  DELIVERED
+}
+
+model Expense {
+  id              String   @id @default(cuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  expenseDate     DateTime
+  category        String
+  description     String
+  country         String
+  originalAmount  Float
+  adjustedAmount  Float
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
