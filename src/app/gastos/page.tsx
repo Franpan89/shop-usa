@@ -1,4 +1,22 @@
-export default function GastosPage() {
+import prisma from '@/lib/prisma';
+
+export default async function GastosPage() {
+  // Get the first tenant for now
+  const tenant = await prisma.tenant.findFirst();
+  
+  const expenses = tenant ? await prisma.expense.findMany({
+    where: { tenantId: tenant.id },
+    orderBy: { expenseDate: 'desc' }
+  }) : [];
+
+  const orders = tenant ? await prisma.order.findMany({
+    where: { tenantId: tenant.id },
+  }) : [];
+
+  const totalIncome = orders.reduce((sum, o) => sum + (o.totalAmount ?? 0), 0);
+  const totalExpenses = expenses.reduce((sum, e) => sum + (e.originalAmount ?? 0), 0);
+  const utility = totalIncome - totalExpenses;
+
   return (
     <>
       <header className="page-header">
@@ -19,26 +37,20 @@ export default function GastosPage() {
       <div className="filter-bar">
         <div className="input-container">
           <label>Fecha Inicial</label>
-          <input type="date" className="input-field" defaultValue="2026-04-01" />
+          <input type="date" className="input-field" />
         </div>
         <div className="input-container">
           <label>Fecha Final</label>
-          <input type="date" className="input-field" defaultValue="2026-04-30" />
+          <input type="date" className="input-field" />
         </div>
         <div className="input-container">
           <label>Categoría</label>
           <select className="input-field">
             <option>Todas las Categorías</option>
-            <option>Insumos</option>
-            <option>Logística</option>
-            <option>Ventas</option>
-          </select>
-        </div>
-        <div className="input-container">
-          <label>País</label>
-          <select className="input-field">
-            <option>Todos los Países</option>
-            <option>Ecuador</option>
+            <option>LOGISTICS</option>
+            <option>SUPPLIES</option>
+            <option>SALES</option>
+            <option>OTHER</option>
           </select>
         </div>
         <div style={{ marginTop: 'auto' }}>
@@ -49,20 +61,20 @@ export default function GastosPage() {
       </div>
 
       <div className="dashboard-grid" style={{ marginBottom: '24px' }}>
-        <div className="glass-panel stat-card">
+        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
           <div className="stat-title">Ingresos Totales</div>
-          <div className="stat-value" style={{ fontSize: '2rem', color: '#10b981' }}>$4,771.87</div>
-          <div className="stat-desc">Pedidos: $4,278.37 | Ventas Directas: $493.50</div>
+          <div className="stat-value" style={{ fontSize: '2rem', color: '#10b981' }}>${totalIncome.toFixed(2)}</div>
+          <div className="stat-desc">Basado en pedidos registrados</div>
         </div>
-        <div className="glass-panel stat-card">
+        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
           <div className="stat-title" style={{ color: '#ef4444' }}>Gastos Totales</div>
-          <div className="stat-value" style={{ fontSize: '2rem', color: '#ef4444' }}>-$1,519.16</div>
-          <div className="stat-desc">Original: $1,519.16</div>
+          <div className="stat-value" style={{ fontSize: '2rem', color: '#ef4444' }}>-${totalExpenses.toFixed(2)}</div>
+          <div className="stat-desc">Todos los egresos registrados</div>
         </div>
-        <div className="glass-panel stat-card">
+        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
           <div className="stat-title" style={{ color: '#10b981' }}>Utilidad</div>
-          <div className="stat-value" style={{ fontSize: '2rem', color: '#10b981' }}>$3,252.71</div>
-          <div className="stat-desc">Ganancia</div>
+          <div className="stat-value" style={{ fontSize: '2rem', color: '#10b981' }}>${utility.toFixed(2)}</div>
+          <div className="stat-desc">{utility >= 0 ? 'Ganancia Neta' : 'Pérdida'}</div>
         </div>
       </div>
 
@@ -70,7 +82,7 @@ export default function GastosPage() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>FECHA DEL GASTO</th>
+              <th>FECHA</th>
               <th>CATEGORÍA</th>
               <th>DESCRIPCIÓN</th>
               <th>PAÍS</th>
@@ -80,45 +92,38 @@ export default function GastosPage() {
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>10/04/2026</td>
-              <td><span className="badge badge-info">Insumos</span></td>
-              <td>Compra de cajas</td>
-              <td>Ecuador</td>
-              <td>$73.83</td>
-              <td><strong style={{ color: '#ef4444' }}>$73.83</strong></td>
-              <td style={{ display: 'flex', gap: '8px' }}>
-                <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }}>✏️</button>
-                <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem', color: '#ef4444' }}>🗑️</button>
-              </td>
-            </tr>
-            <tr>
-              <td>10/04/2026</td>
-              <td><span className="badge badge-warning">Logística</span></td>
-              <td>Envío 10 de abril</td>
-              <td>Ecuador</td>
-              <td>$269.45</td>
-              <td><strong style={{ color: '#ef4444' }}>$269.45 (100%)</strong></td>
-              <td style={{ display: 'flex', gap: '8px' }}>
-                <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }}>✏️</button>
-                <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem', color: '#ef4444' }}>🗑️</button>
-              </td>
-            </tr>
-            <tr>
-              <td>10/04/2026</td>
-              <td><span className="badge badge-success">Ventas</span></td>
-              <td>Ventas envío 10 de abril</td>
-              <td>Ecuador</td>
-              <td>$1,175.88</td>
-              <td><strong style={{ color: '#ef4444' }}>$1,175.88</strong></td>
-              <td style={{ display: 'flex', gap: '8px' }}>
-                <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }}>✏️</button>
-                <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem', color: '#ef4444' }}>🗑️</button>
-              </td>
-            </tr>
+            {expenses.map((expense) => (
+              <tr key={expense.id}>
+                <td>{new Date(expense.expenseDate).toLocaleDateString()}</td>
+                <td>
+                  <span className={`badge ${
+                    expense.category === 'LOGISTICS' ? 'badge-warning' : 
+                    expense.category === 'SUPPLIES' ? 'badge-info' : 'badge-success'
+                  }`}>
+                    {expense.category}
+                  </span>
+                </td>
+                <td>{expense.description}</td>
+                <td>{expense.country || 'N/A'}</td>
+                <td><strong style={{ color: '#ef4444' }}>${(expense.originalAmount ?? 0).toFixed(2)}</strong></td>
+                <td><strong style={{ color: '#ef4444' }}>${(expense.adjustedAmount ?? expense.originalAmount ?? 0).toFixed(2)}</strong></td>
+                <td style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }} title="Editar">✏️</button>
+                  <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem', color: '#ef4444' }} title="Eliminar">🗑️</button>
+                </td>
+              </tr>
+            ))}
+            {expenses.length === 0 && (
+              <tr>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  No se encontraron gastos.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
     </>
   );
 }
+

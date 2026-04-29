@@ -41,13 +41,23 @@ model Client {
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   code      String
   name      String
+  idNumber  String?
   country   String
   city      String
-  phone     String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  phone           String
+  birthday        DateTime?
+  notes           String?
+  deliveryMethod  DeliveryMethod @default(STORE_PICKUP)
+  deliveryAddress String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   orders    Order[]
+}
+
+enum DeliveryMethod {
+  STORE_PICKUP
+  HOME_DELIVERY
 }
 
 model Order {
@@ -60,13 +70,32 @@ model Order {
   box         Box?     @relation(fields: [boxId], references: [id])
   
   orderDate   DateTime @default(now())
-  status      OrderStatus @default(PENDING)
-  totalAmount Float
-  balance     Float
-  productCount Int
+  status      String   @default("PENDING") // PENDING, IN_TRANSIT, DELIVERED
+  totalAmount Float    @default(0)
+  balance     Float    @default(0)
+  products    Product[]
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Product {
+  id            String      @id @default(cuid())
+  orderId       String
+  order         Order       @relation(fields: [orderId], references: [id])
+  name          String
+  weight        Float
+  purchasedBy   PurchasedBy @default(CLIENT)
+  purchaseValue Float?
+  prepaidAmount Float       @default(0)
+  shippingCost  Float       @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+enum PurchasedBy {
+  CLIENT
+  SHOPUSA
 }
 
 enum OrderStatus {

@@ -1,12 +1,55 @@
 import Link from 'next/link';
+import prisma from '@/lib/prisma';
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  // Get the first tenant for now
+  const tenant = await prisma.tenant.findFirst();
+  
+  if (!tenant) {
+    return <div>No tenant found. Please run the seed script.</div>;
+  }
+
+  // Fetch summary stats
+  const [
+    pedidosCount,
+    cajasTransitCount,
+    cajasDeliveredCount,
+    ingresosSum,
+    gastosSum,
+    recentOrders
+  ] = await Promise.all([
+    prisma.order.count({ where: { tenantId: tenant.id } }),
+    prisma.box.count({ where: { tenantId: tenant.id, status: 'IN_TRANSIT' } }),
+    prisma.box.count({ where: { tenantId: tenant.id, status: 'DELIVERED' } }),
+    prisma.order.aggregate({
+      _sum: { totalAmount: true },
+      where: { tenantId: tenant.id }
+    }),
+    prisma.expense.aggregate({
+      _sum: { originalAmount: true },
+      where: { tenantId: tenant.id }
+    }),
+    prisma.order.findMany({
+      where: { tenantId: tenant.id },
+      take: 5,
+      orderBy: { orderDate: 'desc' },
+      include: { 
+        client: true,
+        products: true,
+      }
+    })
+  ]);
+
+  const totalIncome = ingresosSum._sum.totalAmount || 0;
+  const totalExpenses = gastosSum._sum.originalAmount || 0;
+  const utility = totalIncome - totalExpenses;
+
   return (
     <>
       <header className="page-header">
         <div>
           <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Monitoreo general de ShopUSA SaaS</p>
+          <p className="page-subtitle">Monitoreo general de ShopUSA SaaS: <strong>{tenant.name}</strong></p>
         </div>
         <div className="filter-bar" style={{ marginBottom: 0 }}>
           <div className="input-container">
@@ -32,8 +75,8 @@ export default function DashboardPage() {
             🛒
           </div>
           <div className="stat-title">Pedidos del Período</div>
-          <div className="stat-value">71</div>
-          <div className="stat-desc">0 entregados</div>
+          <div className="stat-value">{pedidosCount}</div>
+          <div className="stat-desc">En el sistema actualmente</div>
           <Link href="/pedidos" style={{ color: 'var(--accent-color)', fontWeight: 600, textDecoration: 'none', marginTop: '16px', fontSize: '1rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
             Ver todos los pedidos <span>&rarr;</span>
           </Link>
@@ -43,9 +86,9 @@ export default function DashboardPage() {
           <div className="stat-icon-wrapper" style={{ color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)' }}>
             📦
           </div>
-          <div className="stat-title">Cajas del Período</div>
-          <div className="stat-value">0</div>
-          <div className="stat-desc">en tránsito hacia Ecuador/Panamá</div>
+          <div className="stat-title">Cajas en Tránsito</div>
+          <div className="stat-value">{cajasTransitCount}</div>
+          <div className="stat-desc">{cajasDeliveredCount} cajas ya entregadas</div>
           <Link href="/cajas" style={{ color: 'var(--accent-color)', fontWeight: 600, textDecoration: 'none', marginTop: '16px', fontSize: '1rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
             Ver todas las cajas <span>&rarr;</span>
           </Link>
@@ -56,7 +99,7 @@ export default function DashboardPage() {
             $
           </div>
           <div className="stat-title">Ingresos Totales</div>
-          <div className="stat-value">$4,771.87</div>
+          <div className="stat-value">${totalIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
           <div className="stat-desc">Pedidos + Ventas Directas</div>
           <div style={{ color: '#10b981', fontWeight: 600, marginTop: '16px', fontSize: '1rem', cursor: 'pointer' }}>Ver detalles financieros</div>
         </div>
@@ -66,19 +109,21 @@ export default function DashboardPage() {
             📈
           </div>
           <div className="stat-title">Utilidad del Período</div>
-          <div className="stat-value text-success">$3,252.71</div>
-          <div className="stat-desc">Gastos documentados: $1,519.16</div>
+          <div className={`stat-value ${utility >= 0 ? 'text-success' : 'text-danger'}`}>
+            ${utility.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          </div>
+          <div className="stat-desc">Gastos documentados: ${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
         </div>
       </div>
       
       <div>
-        <h3 style={{ marginBottom: '24px', fontSize: '1.5rem', fontWeight: 700 }}>Actividad Reciente (Pedidos en Tránsito)</h3>
+        <h3 style={{ marginBottom: '24px', fontSize: '1.5rem', fontWeight: 700 }}>Actividad Reciente</h3>
         <div className="glass-panel table-container">
           <table className="data-table">
             <thead>
               <tr>
                 <th>CLIENTE</th>
-                <th>PEDIDO / PAÍS</th>
+                <th>PAÍS</th>
                 <th>FECHA</th>
                 <th>ESTADO</th>
                 <th>PRODUCTOS</th>
@@ -87,57 +132,38 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>
-                  <strong style={{ fontSize: '1.05rem' }}>Maria Cielo Duran</strong><br/>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>EC00351</span>
-                </td>
-                <td>ID: 935 <br/><span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>País: EC</span></td>
-                <td>24/04/2026 22:06</td>
-                <td><span className="badge badge-warning">En Tránsito</span></td>
-                <td>2 / 2 prod.</td>
-                <td>
-                  <strong>$8.50</strong><br/>
-                  <span style={{ fontSize: '0.8rem', color: '#10b981' }}>Bal: $0.00</span>
-                </td>
-                <td>
-                  <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '0.9rem' }}>Ver</button>
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <strong style={{ fontSize: '1.05rem' }}>Astrid Bravo</strong><br/>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>EC00313</span>
-                </td>
-                <td>ID: 934 <br/><span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>País: EC</span></td>
-                <td>24/04/2026 22:02</td>
-                <td><span className="badge badge-warning">En Tránsito</span></td>
-                <td>3 / 3 prod.</td>
-                <td>
-                  <strong>$17.00</strong><br/>
-                  <span style={{ fontSize: '0.8rem', color: '#10b981' }}>Bal: $0.00</span>
-                </td>
-                <td>
-                  <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '0.9rem' }}>Ver</button>
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <strong style={{ fontSize: '1.05rem' }}>Sebastian Reinoso</strong><br/>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>EC00164</span>
-                </td>
-                <td>ID: 933 <br/><span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>País: EC</span></td>
-                <td>24/04/2026 22:01</td>
-                <td><span className="badge badge-warning">En Tránsito</span></td>
-                <td>1 / 1 prod.</td>
-                <td>
-                  <strong>$4.25</strong><br/>
-                  <span style={{ fontSize: '0.8rem', color: '#ef4444' }}>Bal: $4.25</span>
-                </td>
-                <td>
-                  <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '0.9rem' }}>Ver</button>
-                </td>
-              </tr>
+              {recentOrders.map((order) => (
+                <tr key={order.id}>
+                  <td>
+                    <strong style={{ fontSize: '1.05rem' }}>{order.client.name}</strong><br/>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{order.client.code}</span>
+                  </td>
+                  <td>{order.client.country}</td>
+                  <td>{new Date(order.orderDate).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                  <td>
+                    <span className={`badge ${order.status === 'DELIVERED' ? 'badge-success' : 'badge-warning'}`}>
+                      {order.status === 'DELIVERED' ? 'Entregado' : order.status === 'IN_TRANSIT' ? 'En Tránsito' : 'Pendiente'}
+                    </span>
+                  </td>
+                  <td>{order.products.length} prod.</td>
+                  <td>
+                    <strong>${order.totalAmount.toFixed(2)}</strong><br/>
+                    <span style={{ fontSize: '0.8rem', color: order.balance > 0 ? '#ef4444' : '#10b981' }}>
+                      Bal: ${order.balance.toFixed(2)}
+                    </span>
+                  </td>
+                  <td>
+                    <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '0.9rem' }}>Ver</button>
+                  </td>
+                </tr>
+              ))}
+              {recentOrders.length === 0 && (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
+                    No hay actividad reciente.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -145,3 +171,4 @@ export default function DashboardPage() {
     </>
   );
 }
+

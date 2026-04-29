@@ -1,6 +1,11 @@
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 
-const prisma = new PrismaClient();
+const pool = new Pool({ connectionString: process.env.DIRECT_URL });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   console.log('Starting seed...');
@@ -33,7 +38,7 @@ async function main() {
     { code: 'EC00164', name: 'Sebastian Reinoso', country: 'Ecuador', city: 'Cuenca', phone: '+593 98 765 4321' },
   ];
 
-  const clients = [];
+  const clients: { id: string; name: string }[] = [];
   for (const c of clientsData) {
     const client = await prisma.client.create({
       data: { ...c, tenantId: tenant.id },
@@ -74,7 +79,6 @@ async function main() {
         clientId: o.client.id,
         totalAmount: o.amount,
         balance: o.balance,
-        productCount: o.count,
         status: o.status as any,
         boxId: o.boxId,
       },
