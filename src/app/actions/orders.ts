@@ -12,17 +12,27 @@ export async function createOrder(clientId: string, products: any[]) {
   const tenant = await prisma.tenant.findFirst();
   if (!tenant) throw new Error('No tenant found');
 
+  const TAX_RATE = 0.065; // 6.5% on SHOPUSA purchase values
+
+  // Fetch client's service fee %
+  const client = await prisma.client.findUnique({
+    where: { id: clientId },
+    select: { serviceFeePercent: true },
+  });
+  const feePercent = client?.serviceFeePercent ?? 20;
+
   // Calculate totals
-  let totalAmount = 0;
+  let baseAmount = 0;
+  let taxableAmount = 0;
   let totalPrepaid = 0;
 
   const productData = products.map((p: any) => {
-    const shippingCost = p.shippingCost || 0;
-    const purchaseValue = p.purchasedBy === 'SHOPUSA' ? (p.purchaseValue || 0) : 0;
-    const prepaid = p.prepaidAmount || 0;
+    const shippingCost = parseFloat(p.shippingCost) || 0;
+    const purchaseValue = p.purchasedBy === 'SHOPUSA' ? (parseFloat(p.purchaseValue) || 0) : 0;
+    const prepaid = parseFloat(p.prepaidAmount) || 0;
 
-    const itemTotal = shippingCost + purchaseValue;
-    totalAmount += itemTotal;
+    baseAmount += shippingCost + purchaseValue;
+    if (p.purchasedBy === 'SHOPUSA') taxableAmount += purchaseValue;
     totalPrepaid += prepaid;
 
     return {
@@ -30,12 +40,16 @@ export async function createOrder(clientId: string, products: any[]) {
       weight: parseFloat(p.weight) || 0,
       purchasedBy: p.purchasedBy,
       purchaseValue: p.purchasedBy === 'SHOPUSA' ? parseFloat(p.purchaseValue) : null,
-      prepaidAmount: parseFloat(p.prepaidAmount) || 0,
-      shippingCost: parseFloat(p.shippingCost) || 0,
+      prepaidAmount: prepaid,
+      shippingCost,
     };
   });
 
-  const balance = totalAmount - totalPrepaid;
+  const taxAmount = parseFloat((taxableAmount * TAX_RATE).toFixed(2));
+  const baseWithTax = baseAmount + taxAmount;
+  const serviceFeeAmount = parseFloat((baseWithTax * feePercent / 100).toFixed(2));
+  const totalAmount = parseFloat((baseWithTax + serviceFeeAmount).toFixed(2));
+  const balance = parseFloat((totalAmount - totalPrepaid).toFixed(2));
 
   const order = await prisma.order.create({
     data: {
@@ -43,6 +57,9 @@ export async function createOrder(clientId: string, products: any[]) {
       clientId,
       totalAmount,
       balance,
+      taxAmount,
+      serviceFeePercent: feePercent,
+      serviceFeeAmount,
       status: 'PENDING',
       products: {
         create: productData,

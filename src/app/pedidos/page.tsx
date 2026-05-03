@@ -9,8 +9,16 @@ export default async function PedidosPage() {
   
   const clients = tenant ? await prisma.client.findMany({
     where: { tenantId: tenant.id },
+    select: { id: true, name: true, code: true, serviceFeePercent: true, country: true, shippingRatePerHalfLb: true },
     orderBy: { name: 'asc' }
   }) : [];
+
+  const shippingRatesList = tenant ? await prisma.shippingCountryRate.findMany({
+    where: { tenantId: tenant.id },
+  }) : [];
+  const shippingRates: Record<string, number> = Object.fromEntries(
+    shippingRatesList.map(r => [r.country, r.ratePerHalfLb])
+  );
 
   const orders = tenant ? await prisma.order.findMany({
     where: { tenantId: tenant.id },
@@ -30,7 +38,7 @@ export default async function PedidosPage() {
           <p className="page-subtitle">Lista de pedidos con información de asignación de productos a cajas.</p>
         </div>
         <div style={{ display: 'flex', gap: '16px' }}>
-          <NewOrderModal clients={clients} />
+          <NewOrderModal clients={clients} shippingRates={shippingRates} />
         </div>
       </header>
 
@@ -72,6 +80,7 @@ export default async function PedidosPage() {
               <th>FECHA ⬇</th>
               <th>ESTADO</th>
               <th>PRODUCTOS</th>
+              <th>PESO</th>
               <th>CAJA</th>
               <th>TOTAL / BALANCE</th>
               <th>ACCIONES</th>
@@ -103,6 +112,9 @@ export default async function PedidosPage() {
                   </span>
                 </td>
                 <td>{order.products.length} prod.</td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {order.products.reduce((s, p) => s + p.weight, 0).toFixed(2)} lbs
+                </td>
                 <td>
                   {order.box ? (
                     <span style={{ color: 'var(--accent-color)', fontWeight: 600 }}>📦 {order.box.internalId}</span>
@@ -126,7 +138,7 @@ export default async function PedidosPage() {
             ))}
             {orders.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                   No se encontraron pedidos.
                 </td>
               </tr>
