@@ -25,6 +25,8 @@ export async function createClient(formData: FormData) {
   const tenant = await prisma.tenant.findFirst();
   if (!tenant) throw new Error('No tenant found');
 
+  const serviceFeePercent = parseFloat(formData.get('serviceFeePercent') as string);
+
   await prisma.client.create({
     data: {
       tenantId: tenant.id,
@@ -38,6 +40,7 @@ export async function createClient(formData: FormData) {
       notes,
       deliveryMethod,
       deliveryAddress,
+      serviceFeePercent: isNaN(serviceFeePercent) ? 20 : serviceFeePercent,
     },
   });
 
@@ -59,6 +62,10 @@ export async function updateClient(id: string, formData: FormData) {
 
   const birthday = birthdayStr ? new Date(birthdayStr) : null;
 
+  const serviceFeePercent = parseFloat(formData.get('serviceFeePercent') as string);
+  const shippingRaw = formData.get('shippingRatePerHalfLb') as string;
+  const shippingRatePerHalfLb = shippingRaw && shippingRaw.trim() !== '' ? parseFloat(shippingRaw) : null;
+
   await prisma.client.update({
     where: { id },
     data: {
@@ -72,6 +79,8 @@ export async function updateClient(id: string, formData: FormData) {
       notes,
       deliveryMethod,
       deliveryAddress,
+      serviceFeePercent: isNaN(serviceFeePercent) ? 20 : serviceFeePercent,
+      shippingRatePerHalfLb: shippingRatePerHalfLb !== null && !isNaN(shippingRatePerHalfLb) ? shippingRatePerHalfLb : null,
     },
   });
 

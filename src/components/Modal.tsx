@@ -54,7 +54,10 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
           margin: 20px;
           padding: 32px;
           border-radius: 24px;
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+          background: var(--bg-surface-solid) !important;
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
           animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
           max-height: 90vh;
           overflow-y: auto;

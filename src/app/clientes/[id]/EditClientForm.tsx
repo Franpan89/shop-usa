@@ -76,6 +76,30 @@ export default function EditClientForm({ client }: EditClientFormProps) {
             <input name="phone" type="text" className="input-field" defaultValue={client.phone || ''} />
           </div>
           <div className="input-container">
+            <label>Service Fee (%)</label>
+            <input
+              name="serviceFeePercent"
+              type="number"
+              step="0.1"
+              min="0"
+              max="100"
+              className="input-field"
+              defaultValue={client.serviceFeePercent ?? 20}
+            />
+          </div>
+          <div className="input-container">
+            <label>Tarifa de envío personalizada ($ / 0.5 lbs)</label>
+            <input
+              name="shippingRatePerHalfLb"
+              type="number"
+              step="0.01"
+              min="0"
+              className="input-field"
+              defaultValue={client.shippingRatePerHalfLb ?? ''}
+              placeholder="Dejar vacío para usar tarifa del país"
+            />
+          </div>
+          <div className="input-container">
             <label>Preferencia de Entrega</label>
             <select 
               name="deliveryMethod" 
