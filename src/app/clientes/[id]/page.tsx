@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import EditClientForm from './EditClientForm';
 import NewAdjustmentModal from './NewAdjustmentModal';
 import { deleteAdjustment } from '../../actions/adjustments';
+import { statusLabel, statusBadgeClass } from '@/lib/orderStatus';
 
 interface ClientDetailPageProps {
   params: Promise<{ id: string }>;
@@ -152,7 +153,14 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
         {/* Order history */}
         <section>
           <div className="glass-panel" style={{ padding: '32px' }}>
-            <h2 style={{ marginBottom: '24px', fontSize: '1.5rem' }}>Historial de Compras / Envíos</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ margin: 0, fontSize: '1.5rem' }}>Historial de Compras / Envíos</h2>
+              {client.orders.length > 0 && (
+                <Link href={`/pedidos?clientId=${id}`} className="btn btn-secondary" style={{ padding: '6px 14px', fontSize: '0.85rem' }}>
+                  📦 Ver con filtros de estado
+                </Link>
+              )}
+            </div>
 
             <div className="table-container">
               <table className="data-table">
@@ -171,8 +179,8 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
                     <tr key={order.id}>
                       <td>{new Date(order.orderDate).toLocaleDateString()}</td>
                       <td>
-                        <span className={`badge ${order.status === 'DELIVERED' ? 'badge-success' : 'badge-warning'}`}>
-                          {order.status === 'DELIVERED' ? 'Entregado' : order.status === 'IN_TRANSIT' ? 'En Tránsito' : 'Pendiente'}
+                        <span className={`badge ${statusBadgeClass(order.status)}`}>
+                          {statusLabel(order.status)}
                         </span>
                       </td>
                       <td>{order.products.length}</td>

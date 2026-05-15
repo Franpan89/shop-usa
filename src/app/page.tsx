@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
+import { statusLabel, statusBadgeClass } from '@/lib/orderStatus';
 
 export default async function DashboardPage() {
   // Get the first tenant for now
@@ -141,8 +142,8 @@ export default async function DashboardPage() {
                   <td>{order.client.country}</td>
                   <td>{new Date(order.orderDate).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                   <td>
-                    <span className={`badge ${order.status === 'DELIVERED' ? 'badge-success' : 'badge-warning'}`}>
-                      {order.status === 'DELIVERED' ? 'Entregado' : order.status === 'IN_TRANSIT' ? 'En Tránsito' : 'Pendiente'}
+                    <span className={`badge ${statusBadgeClass(order.status)}`}>
+                      {statusLabel(order.status)}
                     </span>
                   </td>
                   <td>{order.products.length} prod.</td>
@@ -153,7 +154,7 @@ export default async function DashboardPage() {
                     </span>
                   </td>
                   <td>
-                    <button className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '0.9rem' }}>Ver</button>
+                    <Link href={`/pedidos/${order.id}`} className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '0.9rem', textDecoration: 'none' }}>Ver</Link>
                   </td>
                 </tr>
               ))}

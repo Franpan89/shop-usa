@@ -131,7 +131,7 @@ export default async function ClientesPage({ searchParams }: ClientesPageProps) 
                   </td>
                   <td style={{ display: 'flex', gap: '8px' }}>
                     <Link href={`/clientes/${client.id}`} className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }} title="Detalles">📄</Link>
-                    <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }} title="Pedidos">📦</button>
+                    <Link href={`/pedidos?clientId=${client.id}`} className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }} title="Ver Pedidos">📦</Link>
                     <Link href={`/clientes/${client.id}`} className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }} title="Editar">✏️</Link>
                     <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem', color: '#ef4444' }} title="Eliminar">🗑️</button>
                   </td>

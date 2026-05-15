@@ -405,6 +405,15 @@ body {
   border-color: var(--accent-color);
 }
 
+select.input-field {
+  background-color: var(--bg-surface-solid);
+}
+
+select.input-field option {
+  background-color: var(--bg-surface-solid);
+  color: var(--text-main);
+}
+
 /* User Profile Mini */
 .user-profile-mini {
   display: flex;
@@ -440,4 +449,125 @@ body {
 .user-role {
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+/* ====== Print styles ====== */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Hide all the app chrome */
+  .bg-blobs,
+  .sidebar,
+  aside.sidebar,
+  .modal-overlay,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Collapse the app layout to full width */
+  .app-layout {
+    display: block !important;
+  }
+  .main-content {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .glass-container {
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Flatten glass panels for paper */
+  .glass-panel {
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+    border: 1px solid #cccccc !important;
+    border-radius: 6px !important;
+    color: #000000 !important;
+  }
+
+  /* Keep text readable on paper */
+  h1, h2, h3, h4, p, span, div, strong, td, th {
+    color: #000000 !important;
+  }
+  /* Preserve semantic colors for amounts */
+  .text-success, [style*="#10b981"] { color: #047857 !important; }
+  .text-danger, [style*="#ef4444"] { color: #b91c1c !important; }
+
+  /* Tables print cleanly — no scrolls, fit page width */
+  .table-container {
+    overflow: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  table.data-table {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: auto !important;
+    font-size: 10pt !important;
+  }
+  table.data-table thead {
+    display: table-header-group;
+  }
+  table.data-table th,
+  table.data-table td {
+    border: 1px solid #d0d0d0 !important;
+    padding: 4px 6px !important;
+    word-break: break-word;
+    white-space: normal !important;
+  }
+  table.data-table thead th {
+    background: #f3f4f6 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    font-size: 9pt !important;
+  }
+
+  /* Any leftover containers shouldn't scroll on paper */
+  * {
+    overflow: visible !important;
+  }
+
+  /* Hide all buttons (Volver, Imprimir, etc.) */
+  button,
+  .btn {
+    display: none !important;
+  }
+
+  /* But keep links visible (no nav decoration) */
+  a {
+    color: #000000 !important;
+    text-decoration: none !important;
+  }
+
+  /* Allow page breaks inside long tables */
+  tr {
+    page-break-inside: avoid;
+  }
+
+  /* Force color preservation on badges */
+  .badge {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    border: 1px solid #999 !important;
+  }
 }

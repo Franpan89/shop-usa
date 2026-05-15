@@ -12,6 +12,7 @@ export default function Sidebar() {
     { name: "Clientes", href: "/clientes", icon: "👥" },
     { name: "Pedidos", href: "/pedidos", icon: "🛒" },
     { name: "Cajas", href: "/cajas", icon: "📦" },
+    { name: "Productos", href: "/productos", icon: "🏷️" },
     { name: "Contabilidad", href: "/gastos", icon: "📊" },
     { name: "Configuraciones", href: "/configuraciones", icon: "⚙️" },
   ];

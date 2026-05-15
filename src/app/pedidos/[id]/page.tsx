@@ -1,22 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import prisma from '@/lib/prisma';
+import { statusLabel, statusBadgeClass } from '@/lib/orderStatus';
+import OrderStatusChanger from './OrderStatusChanger';
+import RegisterPaymentButton from './RegisterPaymentButton';
 
 interface Props {
   params: Promise<{ id: string }>;
 }
-
-const STATUS_LABEL: Record<string, string> = {
-  PENDING: 'Pendiente',
-  IN_TRANSIT: 'En Tránsito',
-  DELIVERED: 'Entregado',
-};
-
-const STATUS_BADGE: Record<string, string> = {
-  PENDING: 'badge-secondary',
-  IN_TRANSIT: 'badge-warning',
-  DELIVERED: 'badge-success',
-};
 
 export default async function OrderDetailPage({ params }: Props) {
   const { id } = await params;
@@ -53,10 +44,28 @@ export default async function OrderDetailPage({ params }: Props) {
             </p>
           </div>
         </div>
-        <span className={`badge ${STATUS_BADGE[order.status] ?? 'badge-secondary'}`} style={{ fontSize: '0.9rem', padding: '8px 16px' }}>
-          {STATUS_LABEL[order.status] ?? order.status}
+        <span className={`badge ${statusBadgeClass(order.status)}`} style={{ fontSize: '0.9rem', padding: '8px 16px' }}>
+          {statusLabel(order.status)}
         </span>
       </header>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '16px', marginBottom: '24px', alignItems: 'stretch' }}>
+        <div className="glass-panel" style={{ padding: '20px 24px' }}>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Cambiar estado
+          </div>
+          <OrderStatusChanger orderId={order.id} currentStatus={order.status} />
+        </div>
+        <div className="glass-panel" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', gap: '8px', minWidth: '220px' }}>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Pagos
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            Balance: <strong style={{ color: order.balance > 0 ? '#ef4444' : '#10b981' }}>${order.balance.toFixed(2)}</strong>
+          </div>
+          <RegisterPaymentButton orderId={order.id} balance={order.balance} />
+        </div>
+      </div>
 
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '32px' }}>

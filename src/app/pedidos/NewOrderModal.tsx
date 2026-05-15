@@ -13,9 +13,17 @@ interface Client {
   shippingRatePerHalfLb: number | null;
 }
 
+interface CatalogEntry {
+  name: string;
+  defaultWeight: number | null;
+  defaultPurchaseValue: number | null;
+  defaultPurchasedBy: string;
+}
+
 interface NewOrderModalProps {
   clients: Client[];
   shippingRates: Record<string, number>;
+  catalog?: CatalogEntry[];
   initialClientId?: string;
 }
 
@@ -44,7 +52,8 @@ function calcAutoShipping(weight: string, rate: number): string {
   return (halfPounds * rate).toFixed(2);
 }
 
-export default function NewOrderModal({ clients, shippingRates, initialClientId }: NewOrderModalProps) {
+export default function NewOrderModal({ clients, shippingRates, catalog = [], initialClientId }: NewOrderModalProps) {
+  const catalogByName = new Map(catalog.map((c) => [c.name.toLowerCase(), c]));
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +92,24 @@ export default function NewOrderModal({ clients, shippingRates, initialClientId 
       }
       if (field === 'shippingCost') {
         updated.shippingAuto = false;
+      }
+      // Autocomplete from catalog when a name is set/picked
+      if (field === 'name') {
+        const match = catalogByName.get(value.trim().toLowerCase());
+        if (match) {
+          if (!updated.weight && match.defaultWeight != null) {
+            updated.weight = String(match.defaultWeight);
+            if (updated.shippingAuto) {
+              updated.shippingCost = calcAutoShipping(updated.weight, shippingRate);
+            }
+          }
+          if (match.defaultPurchasedBy === 'CLIENT' || match.defaultPurchasedBy === 'SHOPUSA') {
+            updated.purchasedBy = match.defaultPurchasedBy;
+          }
+          if (!updated.purchaseValue && match.defaultPurchaseValue != null) {
+            updated.purchaseValue = String(match.defaultPurchaseValue);
+          }
+        }
       }
       return updated;
     }));
@@ -137,6 +164,14 @@ export default function NewOrderModal({ clients, shippingRates, initialClientId 
         + Nuevo Pedido
       </button>
 
+      {catalog.length > 0 && (
+        <datalist id="catalog-products">
+          {catalog.map((c) => (
+            <option key={c.name} value={c.name} />
+          ))}
+        </datalist>
+      )}
+
       <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="Crear Nuevo Envío / Pedido">
         <form onSubmit={handleSubmit}>
           {error && (
@@ -187,8 +222,23 @@ export default function NewOrderModal({ clients, shippingRates, initialClientId 
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div className="input-container" style={{ gridColumn: 'span 2' }}>
-                    <label>Nombre del Producto</label>
-                    <input type="text" className="input-field" value={product.name} onChange={(e) => updateProduct(product.id, 'name', e.target.value)} placeholder="Ej: Laptop, Zapatos, Perfume..." required />
+                    <label>
+                      Nombre del Producto
+                      {catalog.length > 0 && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: 400 }}>
+                          (autocompleta con el catálogo)
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      value={product.name}
+                      onChange={(e) => updateProduct(product.id, 'name', e.target.value)}
+                      placeholder="Ej: Laptop, Zapatos, Perfume..."
+                      required
+                      list="catalog-products"
+                    />
                   </div>
 
                   <div className="input-container">
