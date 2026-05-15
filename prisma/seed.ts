@@ -62,14 +62,67 @@ async function main() {
     boxes.push(box);
   }
 
-  // Create Orders
+  // Create Orders (with real products)
   const findClient = (name: string) => clients.find(c => c.name === name)!;
 
-  const ordersData = [
-    { client: findClient('Maria Cielo Duran'), amount: 8.50, balance: 0.00, count: 2, status: 'IN_TRANSIT' },
-    { client: findClient('Astrid Bravo'), amount: 17.00, balance: 0.00, count: 3, status: 'IN_TRANSIT' },
-    { client: findClient('Sebastian Reinoso'), amount: 4.25, balance: 4.25, count: 1, status: 'IN_TRANSIT' },
-    { client: findClient('Juanita Valdivieso'), amount: 96.93, balance: 4.96, count: 2, status: 'DELIVERED', boxId: boxes[0].id },
+  type SeedProduct = {
+    name: string;
+    weight: number;
+    purchasedBy: 'CLIENT' | 'SHOPUSA';
+    purchaseValue?: number;
+    shippingCost: number;
+    prepaidAmount?: number;
+  };
+
+  const ordersData: Array<{
+    client: { id: string; name: string };
+    amount: number;
+    balance: number;
+    status: string;
+    boxId?: string;
+    products: SeedProduct[];
+  }> = [
+    {
+      client: findClient('Maria Cielo Duran'),
+      amount: 8.50,
+      balance: 0.00,
+      status: 'SHIPPED',
+      products: [
+        { name: 'Crema facial', weight: 0.5, purchasedBy: 'CLIENT', shippingCost: 4.25 },
+        { name: 'Vitaminas', weight: 0.5, purchasedBy: 'CLIENT', shippingCost: 4.25, prepaidAmount: 8.50 },
+      ],
+    },
+    {
+      client: findClient('Astrid Bravo'),
+      amount: 17.00,
+      balance: 0.00,
+      status: 'READY_TO_SHIP',
+      products: [
+        { name: 'Camiseta', weight: 0.5, purchasedBy: 'CLIENT', shippingCost: 4.25 },
+        { name: 'Pantalón', weight: 1.0, purchasedBy: 'CLIENT', shippingCost: 8.50 },
+        { name: 'Calcetines', weight: 0.5, purchasedBy: 'CLIENT', shippingCost: 4.25, prepaidAmount: 17.00 },
+      ],
+    },
+    {
+      client: findClient('Sebastian Reinoso'),
+      amount: 4.25,
+      balance: 4.25,
+      status: 'ARRIVED',
+      products: [
+        { name: 'Perfume', weight: 0.5, purchasedBy: 'CLIENT', shippingCost: 4.25 },
+      ],
+    },
+    {
+      client: findClient('Juanita Valdivieso'),
+      amount: 96.93,
+      balance: 4.96,
+      status: 'DELIVERED',
+      boxId: boxes[0].id,
+      products: [
+        { name: 'Cartera de cuero', weight: 4.0, purchasedBy: 'SHOPUSA', purchaseValue: 65.00, shippingCost: 34.00, prepaidAmount: 50.00 },
+        { name: 'Bufanda', weight: 3.74, purchasedBy: 'CLIENT', shippingCost: 31.83, prepaidAmount: 41.97 },
+      ],
+    },
   ];
 
   for (const o of ordersData) {
@@ -81,6 +134,16 @@ async function main() {
         balance: o.balance,
         status: o.status as any,
         boxId: o.boxId,
+        products: {
+          create: o.products.map((p) => ({
+            name: p.name,
+            weight: p.weight,
+            purchasedBy: p.purchasedBy,
+            purchaseValue: p.purchaseValue ?? null,
+            shippingCost: p.shippingCost,
+            prepaidAmount: p.prepaidAmount ?? 0,
+          })),
+        },
       },
     });
   }
