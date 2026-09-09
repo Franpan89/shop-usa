@@ -2,6 +2,8 @@ import prisma from '@/lib/prisma';
 import { updateShippingCategory, deleteShippingCategory } from '../actions/shipping';
 import AddCategoryForm from './AddCategoryForm';
 
+export const dynamic = 'force-dynamic';
+
 function calcTiers(rate: number, divisor: number, count = 8) {
   return Array.from({ length: count }, (_, i) => ({
     min: i === 0 ? 0.01 : parseFloat((i * divisor + 0.01).toFixed(2)),

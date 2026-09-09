@@ -2,6 +2,8 @@ import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { statusLabel, statusBadgeClass } from '@/lib/orderStatus';
 
+export const dynamic = 'force-dynamic';
+
 export default async function DashboardPage() {
   // Get the first tenant for now
   const tenant = await prisma.tenant.findFirst();

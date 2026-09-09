@@ -4,6 +4,8 @@ import BoxStatusActions from './BoxStatusActions';
 import NewBoxModal from './NewBoxModal';
 import { normalizeOrderStatus } from '@/lib/orderStatus';
 
+export const dynamic = 'force-dynamic';
+
 export default async function CajasPage() {
   const tenant = await prisma.tenant.findFirst();
 

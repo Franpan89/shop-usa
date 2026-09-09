@@ -2,6 +2,8 @@ import prisma from '@/lib/prisma';
 import NewCatalogEntryModal from './NewCatalogEntryModal';
 import CatalogRowActions from './CatalogRowActions';
 
+export const dynamic = 'force-dynamic';
+
 export default async function ProductosPage() {
   const tenant = await prisma.tenant.findFirst();
 
