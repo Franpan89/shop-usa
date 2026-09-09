@@ -234,6 +234,11 @@ export default async function PedidosPage({ searchParams }: Props) {
                   <span className={`badge ${statusBadgeClass(order.status)}`}>
                     {statusLabel(order.status)}
                   </span>
+                  {order.receivedStatus === 'NOVEDAD' && (
+                    <span className="badge badge-danger" title={order.receivedNote ?? undefined} style={{ marginLeft: '6px' }}>
+                      ⚠️ Novedad
+                    </span>
+                  )}
                 </td>
                 <td>{order.products.length} prod.</td>
                 <td style={{ whiteSpace: 'nowrap' }}>

@@ -44,9 +44,16 @@ export default async function OrderDetailPage({ params }: Props) {
             </p>
           </div>
         </div>
-        <span className={`badge ${statusBadgeClass(order.status)}`} style={{ fontSize: '0.9rem', padding: '8px 16px' }}>
-          {statusLabel(order.status)}
-        </span>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span className={`badge ${statusBadgeClass(order.status)}`} style={{ fontSize: '0.9rem', padding: '8px 16px' }}>
+            {statusLabel(order.status)}
+          </span>
+          {order.receivedStatus === 'NOVEDAD' && (
+            <span className="badge badge-danger" title={order.receivedNote ?? undefined} style={{ fontSize: '0.9rem', padding: '8px 16px' }}>
+              ⚠️ Novedad
+            </span>
+          )}
+        </div>
       </header>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '16px', marginBottom: '24px', alignItems: 'stretch' }}>

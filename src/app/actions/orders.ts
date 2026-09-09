@@ -184,6 +184,59 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus) {
   return { success: true };
 }
 
+export async function confirmOrderReceived(orderId: string) {
+  if (!orderId) throw new Error('Order id required');
+
+  const order = await prisma.order.update({
+    where: { id: orderId },
+    data: { receivedStatus: 'OK', receivedNote: null, receivedAt: new Date() },
+    select: { clientId: true, boxId: true },
+  });
+
+  revalidatePath('/pedidos');
+  revalidatePath('/cajas');
+  revalidatePath('/');
+  revalidatePath(`/pedidos/${orderId}`);
+  revalidatePath(`/clientes/${order.clientId}`);
+  return { success: true };
+}
+
+export async function reportOrderIssue(orderId: string, note: string) {
+  if (!orderId) throw new Error('Order id required');
+  const trimmed = note?.trim();
+  if (!trimmed) throw new Error('Describe la novedad');
+
+  const order = await prisma.order.update({
+    where: { id: orderId },
+    data: { receivedStatus: 'NOVEDAD', receivedNote: trimmed, receivedAt: new Date() },
+    select: { clientId: true, boxId: true },
+  });
+
+  revalidatePath('/pedidos');
+  revalidatePath('/cajas');
+  revalidatePath('/');
+  revalidatePath(`/pedidos/${orderId}`);
+  revalidatePath(`/clientes/${order.clientId}`);
+  return { success: true };
+}
+
+export async function undoOrderReceipt(orderId: string) {
+  if (!orderId) throw new Error('Order id required');
+
+  const order = await prisma.order.update({
+    where: { id: orderId },
+    data: { receivedStatus: null, receivedNote: null, receivedAt: null },
+    select: { clientId: true, boxId: true },
+  });
+
+  revalidatePath('/pedidos');
+  revalidatePath('/cajas');
+  revalidatePath('/');
+  revalidatePath(`/pedidos/${orderId}`);
+  revalidatePath(`/clientes/${order.clientId}`);
+  return { success: true };
+}
+
 async function recomputeBoxWeight(boxId: string) {
   const orders = await prisma.order.findMany({
     where: { boxId },

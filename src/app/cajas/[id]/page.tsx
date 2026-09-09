@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import prisma from '@/lib/prisma';
 import BoxStatusActions from '../BoxStatusActions';
+import OrderReceivingControl from '../OrderReceivingControl';
 import { normalizeOrderStatus, statusBadgeClass, statusLabel } from '@/lib/orderStatus';
 
 interface Props {
@@ -40,6 +41,10 @@ export default async function BoxDetailPage({ params }: Props) {
   const totalBalance = box.orders.reduce((s, o) => s + o.balance, 0);
   const allDelivered = box.orders.length > 0 && box.orders.every(o => normalizeOrderStatus(o.status) === 'DELIVERED');
   const anyArrived = box.orders.some(o => normalizeOrderStatus(o.status) === 'ARRIVED');
+
+  const receivedOkCount = box.orders.filter(o => o.receivedStatus === 'OK').length;
+  const novedadCount = box.orders.filter(o => o.receivedStatus === 'NOVEDAD').length;
+  const reviewedCount = receivedOkCount + novedadCount;
 
   const boxStatusLabel = box.status === 'DELIVERED' ? 'Entregada' : anyArrived ? 'Llegó al país' : 'En Tránsito';
   const boxStatusBadge = box.status === 'DELIVERED' ? 'badge-success' : anyArrived ? 'badge-info' : 'badge-warning';
@@ -103,6 +108,16 @@ export default async function BoxDetailPage({ params }: Props) {
           allDelivered={allDelivered}
           anyArrived={anyArrived}
         />
+        {anyArrived && box.orders.length > 0 && (
+          <div style={{ marginTop: '12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            📥 Recepción: {reviewedCount}/{box.orders.length} confirmados
+            {novedadCount > 0 && (
+              <span style={{ color: '#ef4444', fontWeight: 600, marginLeft: '8px' }}>
+                ⚠️ {novedadCount} pedido(s) con novedad sin resolver
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {ordersByClient.size === 0 ? (
@@ -164,6 +179,14 @@ export default async function BoxDetailPage({ params }: Props) {
                         {new Date(order.orderDate).toLocaleDateString('es-ES')}
                       </span>
                     </div>
+
+                    {anyArrived && (
+                      <OrderReceivingControl
+                        orderId={order.id}
+                        receivedStatus={order.receivedStatus}
+                        receivedNote={order.receivedNote}
+                      />
+                    )}
 
                     {order.products.length > 0 ? (
                       <div className="table-container">

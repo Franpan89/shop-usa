@@ -77,6 +77,9 @@ model Order {
   
   orderDate         DateTime @default(now())
   status            String   @default("PENDING") // PENDING, IN_TRANSIT, DELIVERED
+  receivedStatus    String?  // null = not yet reviewed, 'OK' = confirmed intact, 'NOVEDAD' = issue reported
+  receivedNote      String?  // description of the issue, set only when receivedStatus = 'NOVEDAD'
+  receivedAt        DateTime?
   totalAmount       Float    @default(0)
   balance           Float    @default(0)
   taxAmount         Float    @default(0)

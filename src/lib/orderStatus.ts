@@ -49,3 +49,20 @@ export function statusLabel(raw: string | null | undefined): string {
 export function statusBadgeClass(raw: string | null | undefined): string {
   return STATUS_BADGE_CLASS[normalizeOrderStatus(raw)];
 }
+
+export type ReceivedStatus = 'OK' | 'NOVEDAD';
+
+export const RECEIVED_LABEL_ES: Record<ReceivedStatus, string> = {
+  OK: 'Recibido',
+  NOVEDAD: 'Novedad',
+};
+
+export const RECEIVED_BADGE_CLASS: Record<ReceivedStatus, string> = {
+  OK: 'badge-success',
+  NOVEDAD: 'badge-danger',
+};
+
+export const RECEIVED_ICON: Record<ReceivedStatus, string> = {
+  OK: '✅',
+  NOVEDAD: '⚠️',
+};

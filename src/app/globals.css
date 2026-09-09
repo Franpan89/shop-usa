@@ -364,6 +364,8 @@ body {
 .badge-success { background: rgba(16, 185, 129, 0.1); color: #10b981; }
 .badge-warning { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
 .badge-info { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+.badge-secondary { background: rgba(128, 128, 128, 0.12); color: var(--text-muted); }
+.badge-danger { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
 
 /* Filter Bar */
 .filter-bar {
