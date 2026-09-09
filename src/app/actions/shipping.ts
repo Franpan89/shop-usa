@@ -9,22 +9,40 @@ async function getTenantId() {
   return tenant.id;
 }
 
-export async function upsertCountryRate(formData: FormData) {
-  const tenantId = await getTenantId();
-  const country = (formData.get('country') as string).trim();
-  const ratePerHalfLb = parseFloat(formData.get('ratePerHalfLb') as string);
-  if (!country || isNaN(ratePerHalfLb) || ratePerHalfLb <= 0) throw new Error('Datos inválidos');
+function parseUnit(raw: FormDataEntryValue | null): 'HALF_LB' | 'LB' {
+  return raw === 'LB' ? 'LB' : 'HALF_LB';
+}
 
-  await prisma.shippingCountryRate.upsert({
-    where: { tenantId_country: { tenantId, country } },
-    create: { tenantId, country, ratePerHalfLb },
-    update: { ratePerHalfLb },
+export async function createShippingCategory(formData: FormData) {
+  const tenantId = await getTenantId();
+  const name = (formData.get('name') as string)?.trim();
+  const country = (formData.get('country') as string)?.trim();
+  const rate = parseFloat(formData.get('rate') as string);
+  const unit = parseUnit(formData.get('unit'));
+  if (!name || !country || isNaN(rate) || rate <= 0) throw new Error('Datos inválidos');
+
+  await prisma.shippingCategory.create({
+    data: { tenantId, name, country, rate, unit },
   });
 
   revalidatePath('/configuraciones');
 }
 
-export async function deleteCountryRate(id: string) {
-  await prisma.shippingCountryRate.delete({ where: { id } });
+export async function updateShippingCategory(formData: FormData) {
+  const id = formData.get('id') as string;
+  const rate = parseFloat(formData.get('rate') as string);
+  const unit = parseUnit(formData.get('unit'));
+  if (!id || isNaN(rate) || rate <= 0) throw new Error('Datos inválidos');
+
+  await prisma.shippingCategory.update({
+    where: { id },
+    data: { rate, unit },
+  });
+
+  revalidatePath('/configuraciones');
+}
+
+export async function deleteShippingCategory(id: string) {
+  await prisma.shippingCategory.delete({ where: { id } });
   revalidatePath('/configuraciones');
 }

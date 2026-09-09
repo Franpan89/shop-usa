@@ -63,8 +63,8 @@ export async function updateClient(id: string, formData: FormData) {
   const birthday = birthdayStr ? new Date(birthdayStr) : null;
 
   const serviceFeePercent = parseFloat(formData.get('serviceFeePercent') as string);
-  const shippingRaw = formData.get('shippingRatePerHalfLb') as string;
-  const shippingRatePerHalfLb = shippingRaw && shippingRaw.trim() !== '' ? parseFloat(shippingRaw) : null;
+  const shippingCategoryRaw = formData.get('shippingCategoryId') as string;
+  const shippingCategoryId = shippingCategoryRaw && shippingCategoryRaw.trim() !== '' ? shippingCategoryRaw : null;
 
   await prisma.client.update({
     where: { id },
@@ -80,7 +80,7 @@ export async function updateClient(id: string, formData: FormData) {
       deliveryMethod,
       deliveryAddress,
       serviceFeePercent: isNaN(serviceFeePercent) ? 20 : serviceFeePercent,
-      shippingRatePerHalfLb: shippingRatePerHalfLb !== null && !isNaN(shippingRatePerHalfLb) ? shippingRatePerHalfLb : null,
+      shippingCategoryId,
     },
   });
 

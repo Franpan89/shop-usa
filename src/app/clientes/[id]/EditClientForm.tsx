@@ -3,11 +3,19 @@
 import { useState } from 'react';
 import { updateClient } from '../../actions/clients';
 
-interface EditClientFormProps {
-  client: any;
+interface ShippingCategory {
+  id: string;
+  name: string;
+  rate: number;
+  unit: 'HALF_LB' | 'LB';
 }
 
-export default function EditClientForm({ client }: EditClientFormProps) {
+interface EditClientFormProps {
+  client: any;
+  categories: ShippingCategory[];
+}
+
+export default function EditClientForm({ client, categories }: EditClientFormProps) {
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -88,16 +96,19 @@ export default function EditClientForm({ client }: EditClientFormProps) {
             />
           </div>
           <div className="input-container">
-            <label>Tarifa de envío personalizada ($ / 0.5 lbs)</label>
-            <input
-              name="shippingRatePerHalfLb"
-              type="number"
-              step="0.01"
-              min="0"
+            <label>Categoría de Envío</label>
+            <select
+              name="shippingCategoryId"
               className="input-field"
-              defaultValue={client.shippingRatePerHalfLb ?? ''}
-              placeholder="Dejar vacío para usar tarifa del país"
-            />
+              defaultValue={client.shippingCategoryId ?? ''}
+            >
+              <option value="">-- Sin categoría --</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name} — ${cat.rate.toFixed(2)}/{cat.unit === 'LB' ? 'lb' : '0.5lb'}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="input-container">
             <label>Preferencia de Entrega</label>

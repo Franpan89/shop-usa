@@ -34,16 +34,12 @@ export default async function PedidosPage({ searchParams }: Props) {
 
   const clients = tenant ? await prisma.client.findMany({
     where: { tenantId: tenant.id },
-    select: { id: true, name: true, code: true, serviceFeePercent: true, country: true, shippingRatePerHalfLb: true },
+    select: {
+      id: true, name: true, code: true, serviceFeePercent: true, country: true,
+      shippingCategory: { select: { id: true, name: true, rate: true, unit: true } },
+    },
     orderBy: { name: 'asc' }
   }) : [];
-
-  const shippingRatesList = tenant ? await prisma.shippingCountryRate.findMany({
-    where: { tenantId: tenant.id },
-  }) : [];
-  const shippingRates: Record<string, number> = Object.fromEntries(
-    shippingRatesList.map(r => [r.country, r.ratePerHalfLb])
-  );
 
   const catalog = tenant ? await prisma.productCatalog.findMany({
     where: { tenantId: tenant.id },
@@ -124,7 +120,6 @@ export default async function PedidosPage({ searchParams }: Props) {
           )}
           <NewOrderModal
             clients={clients}
-            shippingRates={shippingRates}
             catalog={catalog}
             initialClientId={filterClient?.id}
           />

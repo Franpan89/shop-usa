@@ -30,6 +30,11 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
     notFound();
   }
 
+  const categories = await prisma.shippingCategory.findMany({
+    where: { tenantId: client.tenantId },
+    orderBy: [{ country: 'asc' }, { name: 'asc' }],
+  });
+
   const totalSpent = client.orders.reduce((sum, o) => sum + o.totalAmount, 0);
   const totalOrders = client.orders.length;
 
@@ -87,7 +92,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '32px' }}>
         <section>
-          <EditClientForm client={client} />
+          <EditClientForm client={client} categories={categories} />
         </section>
 
         {/* Cargos y Créditos */}

@@ -4,13 +4,20 @@ import { useState, useEffect } from 'react';
 import Modal from '@/components/Modal';
 import { createOrder } from '../actions/orders';
 
+interface ShippingCategory {
+  id: string;
+  name: string;
+  rate: number;
+  unit: 'HALF_LB' | 'LB';
+}
+
 interface Client {
   id: string;
   name: string;
   code: string;
   serviceFeePercent: number;
   country: string;
-  shippingRatePerHalfLb: number | null;
+  shippingCategory: ShippingCategory | null;
 }
 
 interface CatalogEntry {
@@ -22,7 +29,6 @@ interface CatalogEntry {
 
 interface NewOrderModalProps {
   clients: Client[];
-  shippingRates: Record<string, number>;
   catalog?: CatalogEntry[];
   initialClientId?: string;
 }
@@ -45,14 +51,15 @@ const EMPTY_PRODUCT = (): Product => ({
   shippingAuto: true,
 });
 
-function calcAutoShipping(weight: string, rate: number): string {
+function calcAutoShipping(weight: string, rate: number, unit: 'HALF_LB' | 'LB'): string {
   const w = parseFloat(weight);
   if (!w || w <= 0 || !rate) return '';
-  const halfPounds = Math.ceil(w / 0.5);
-  return (halfPounds * rate).toFixed(2);
+  const divisor = unit === 'LB' ? 1 : 0.5;
+  const units = Math.ceil(w / divisor);
+  return (units * rate).toFixed(2);
 }
 
-export default function NewOrderModal({ clients, shippingRates, catalog = [], initialClientId }: NewOrderModalProps) {
+export default function NewOrderModal({ clients, catalog = [], initialClientId }: NewOrderModalProps) {
   const catalogByName = new Map(catalog.map((c) => [c.name.toLowerCase(), c]));
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
@@ -65,15 +72,17 @@ export default function NewOrderModal({ clients, shippingRates, catalog = [], in
   }, [initialClientId]);
 
   const selectedClient = clients.find(c => c.id === clientId);
-  const shippingRate = selectedClient?.shippingRatePerHalfLb ?? (selectedClient?.country ? shippingRates[selectedClient.country] : 0) ?? 0;
+  const shippingRate = selectedClient?.shippingCategory?.rate ?? 0;
+  const shippingUnit = selectedClient?.shippingCategory?.unit ?? 'HALF_LB';
 
   // Recompute auto-shipping costs when client changes
   useEffect(() => {
     const client = clients.find(c => c.id === clientId);
-    const rate = client?.shippingRatePerHalfLb ?? (client?.country ? shippingRates[client.country] : 0) ?? 0;
+    const rate = client?.shippingCategory?.rate ?? 0;
+    const unit = client?.shippingCategory?.unit ?? 'HALF_LB';
     setProducts(prev => prev.map(p => {
       if (!p.shippingAuto) return p;
-      return { ...p, shippingCost: calcAutoShipping(p.weight, rate) };
+      return { ...p, shippingCost: calcAutoShipping(p.weight, rate, unit) };
     }));
   }, [clientId]);
 
@@ -88,7 +97,7 @@ export default function NewOrderModal({ clients, shippingRates, catalog = [], in
       if (p.id !== id) return p;
       const updated: Product = { ...p, [field]: value };
       if (field === 'weight' && p.shippingAuto) {
-        updated.shippingCost = calcAutoShipping(value, shippingRate);
+        updated.shippingCost = calcAutoShipping(value, shippingRate, shippingUnit);
       }
       if (field === 'shippingCost') {
         updated.shippingAuto = false;
@@ -100,7 +109,7 @@ export default function NewOrderModal({ clients, shippingRates, catalog = [], in
           if (!updated.weight && match.defaultWeight != null) {
             updated.weight = String(match.defaultWeight);
             if (updated.shippingAuto) {
-              updated.shippingCost = calcAutoShipping(updated.weight, shippingRate);
+              updated.shippingCost = calcAutoShipping(updated.weight, shippingRate, shippingUnit);
             }
           }
           if (match.defaultPurchasedBy === 'CLIENT' || match.defaultPurchasedBy === 'SHOPUSA') {
@@ -118,7 +127,7 @@ export default function NewOrderModal({ clients, shippingRates, catalog = [], in
   const resetShippingAuto = (id: number) => {
     setProducts(prev => prev.map(p => {
       if (p.id !== id) return p;
-      return { ...p, shippingAuto: true, shippingCost: calcAutoShipping(p.weight, shippingRate) };
+      return { ...p, shippingAuto: true, shippingCost: calcAutoShipping(p.weight, shippingRate, shippingUnit) };
     }));
   };
 
@@ -194,8 +203,9 @@ export default function NewOrderModal({ clients, shippingRates, catalog = [], in
               <div style={{ padding: '10px 16px', borderRadius: '10px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
                 <div style={{ color: 'var(--text-muted)', marginBottom: '2px' }}>Tarifa envío</div>
                 <strong style={{ color: 'var(--accent-color)' }}>
-                  {shippingRate ? `$${shippingRate.toFixed(2)}/0.5 lbs` : 'Sin tarifa'}
-                  {selectedClient.shippingRatePerHalfLb ? ' ★ personal' : ` (${selectedClient.country})`}
+                  {shippingRate
+                    ? `$${shippingRate.toFixed(2)}/${shippingUnit === 'LB' ? 'lb' : '0.5 lbs'} — ${selectedClient.shippingCategory?.name}`
+                    : 'Sin categoría'}
                 </strong>
               </div>
             )}
@@ -286,7 +296,7 @@ export default function NewOrderModal({ clients, shippingRates, catalog = [], in
                     />
                     {product.shippingAuto && product.shippingCost && (
                       <div style={{ fontSize: '0.72rem', color: 'var(--accent-color)', marginTop: '4px' }}>
-                        ✦ Auto: {Math.ceil((parseFloat(product.weight) || 0) / 0.5)} tramos × ${shippingRate.toFixed(2)}
+                        ✦ Auto: {Math.ceil((parseFloat(product.weight) || 0) / (shippingUnit === 'LB' ? 1 : 0.5))} {shippingUnit === 'LB' ? 'lbs' : 'tramos'} × ${shippingRate.toFixed(2)}
                       </div>
                     )}
                   </div>

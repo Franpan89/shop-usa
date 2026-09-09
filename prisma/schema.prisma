@@ -18,7 +18,7 @@ model Tenant {
   boxes          Box[]
   expenses       Expense[]
   adjustments    ClientAdjustment[]
-  shippingRates  ShippingCountryRate[]
+  shippingCategories ShippingCategory[]
   productCatalog ProductCatalog[]
 }
 
@@ -53,7 +53,8 @@ model Client {
   deliveryMethod    DeliveryMethod @default(STORE_PICKUP)
   deliveryAddress   String?
   serviceFeePercent     Float  @default(20)
-  shippingRatePerHalfLb Float? // null = use country rate table
+  shippingCategoryId    String?
+  shippingCategory      ShippingCategory? @relation(fields: [shippingCategoryId], references: [id])
   createdAt             DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -190,14 +191,23 @@ model ProductCatalog {
   @@unique([tenantId, name])
 }
 
-model ShippingCountryRate {
-  id            String   @id @default(cuid())
-  tenantId      String
-  country       String
-  ratePerHalfLb Float
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+enum ShippingUnit {
+  HALF_LB
+  LB
+}
 
-  @@unique([tenantId, country])
+model ShippingCategory {
+  id        String       @id @default(cuid())
+  tenantId  String
+  tenant    Tenant       @relation(fields: [tenantId], references: [id])
+  name      String       // "Ecuador Normal", "Ecuador Migrante", "Ecuador Emprendedor", "Panamá"
+  country   String       // "Ecuador" | "Panamá" — for display grouping only
+  rate      Float
+  unit      ShippingUnit @default(HALF_LB)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  clients   Client[]
+
+  @@unique([tenantId, name])
 }
