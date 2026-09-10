@@ -19,12 +19,14 @@ async function main() {
 
   console.log(`Created Tenant: ${tenant.name} (${tenant.id})`);
 
-  // Create SuperAdmin User
+  // Create initial Admin User (still needs a matching Supabase Auth account —
+  // create that separately, e.g. via the invite flow or Supabase dashboard)
   await prisma.user.create({
     data: {
       tenantId: tenant.id,
+      name: 'Admin',
       email: 'admin@shopusa.com',
-      role: 'SUPERADMIN',
+      role: 'ADMIN',
     },
   });
 

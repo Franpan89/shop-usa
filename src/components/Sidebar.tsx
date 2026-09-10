@@ -3,8 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
+import { signOut } from "@/app/actions/auth";
 
-export default function Sidebar() {
+interface SidebarProps {
+  role: "ADMIN" | "SUBADMIN";
+  userName: string;
+}
+
+export default function Sidebar({ role, userName }: SidebarProps) {
   const pathname = usePathname();
 
   const navLinks = [
@@ -14,8 +20,20 @@ export default function Sidebar() {
     { name: "Cajas", href: "/cajas", icon: "📦" },
     { name: "Productos", href: "/productos", icon: "🏷️" },
     { name: "Contabilidad", href: "/gastos", icon: "📊" },
-    { name: "Configuraciones", href: "/configuraciones", icon: "⚙️" },
+    ...(role === "ADMIN"
+      ? [
+          { name: "Configuraciones", href: "/configuraciones", icon: "⚙️" },
+          { name: "Usuarios", href: "/usuarios", icon: "🔑" },
+        ]
+      : []),
   ];
+
+  const initials = userName
+    .split(" ")
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 
   return (
     <aside className="sidebar glass-panel" style={{ height: 'calc(100vh - 48px)', margin: '24px 0 24px 24px' }}>
@@ -42,12 +60,19 @@ export default function Sidebar() {
 
       <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <ThemeToggle />
-        <div className="user-profile-mini">
-          <div className="user-avatar">AD</div>
-          <div className="user-info">
-            <span className="user-name">Administrador</span>
-            <span className="user-role">Super Admin</span>
+        <div className="user-profile-mini" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="user-avatar">{initials}</div>
+          <div className="user-info" style={{ flex: 1, minWidth: 0 }}>
+            <span className="user-name" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userName}</span>
+            <span className="user-role">{role === "ADMIN" ? "Admin" : "Sub-admin"}</span>
           </div>
+          <button
+            onClick={() => signOut()}
+            title="Cerrar sesión"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem', padding: '4px' }}
+          >
+            🚪
+          </button>
         </div>
       </div>
     </aside>

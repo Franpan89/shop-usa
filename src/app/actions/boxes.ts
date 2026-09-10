@@ -2,6 +2,8 @@
 
 import prisma from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import { requireStaff } from '@/lib/auth';
+import { sendBoxArrivedEmail } from '@/lib/email';
 
 export async function createBox(input: {
   internalId: string;
@@ -67,6 +69,33 @@ export async function markBoxArrived(boxId: string) {
   revalidatePath('/');
   for (const o of box.orders) revalidatePath(`/clientes/${o.clientId}`);
   return { success: true, count: box.orders.length };
+}
+
+export async function notifyBoxArrival(boxId: string) {
+  await requireStaff(); // Admin or Sub-admin — both allowed
+
+  const box = await prisma.box.findUnique({
+    where: { id: boxId },
+    include: { orders: { include: { client: true, products: true } } },
+  });
+  if (!box) throw new Error('Caja no encontrada');
+
+  const ordersByClient = new Map<string, { client: typeof box.orders[number]['client']; products: { name: string; weight: number }[] }>();
+  for (const order of box.orders) {
+    if (!ordersByClient.has(order.clientId)) {
+      ordersByClient.set(order.clientId, { client: order.client, products: [] });
+    }
+    ordersByClient.get(order.clientId)!.products.push(...order.products.map((p) => ({ name: p.name, weight: p.weight })));
+  }
+
+  let sent = 0;
+  for (const { client, products } of ordersByClient.values()) {
+    if (!client.email || products.length === 0) continue;
+    await sendBoxArrivedEmail({ to: client.email, clientName: client.name, products });
+    sent++;
+  }
+
+  return { success: true, sent, totalClients: ordersByClient.size };
 }
 
 export async function markBoxDelivered(boxId: string) {

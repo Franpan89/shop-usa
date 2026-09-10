@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { ORDER_STATUSES, normalizeOrderStatus, type OrderStatus } from '@/lib/orderStatus';
 import { recordCatalogUsage } from './productCatalog';
+import { sendOrderShippedEmail } from '@/lib/email';
 
 export async function createOrder(clientId: string, products: any[]) {
   if (!clientId || !products || products.length === 0) {
@@ -136,6 +137,8 @@ export async function assignOrderToBox(orderId: string, boxId: string | null) {
   if (boxId) boxesToRecompute.add(boxId);
   for (const id of boxesToRecompute) await recomputeBoxWeight(id);
 
+  if (nextStatus === 'SHIPPED') await notifyOrderShipped(orderId);
+
   revalidatePath('/pedidos');
   revalidatePath('/cajas');
   revalidatePath(`/clientes/${updated.clientId}`);
@@ -175,6 +178,8 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus) {
     data: { status },
     select: { clientId: true, boxId: true },
   });
+
+  if (status === 'SHIPPED') await notifyOrderShipped(orderId);
 
   revalidatePath('/pedidos');
   revalidatePath('/cajas');
@@ -235,6 +240,22 @@ export async function undoOrderReceipt(orderId: string) {
   revalidatePath(`/pedidos/${orderId}`);
   revalidatePath(`/clientes/${order.clientId}`);
   return { success: true };
+}
+
+async function notifyOrderShipped(orderId: string) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { client: true, products: true, box: true },
+  });
+  if (!order?.client.email) return;
+
+  await sendOrderShippedEmail({
+    to: order.client.email,
+    clientName: order.client.name,
+    orderRef: `#${order.id.slice(-6).toUpperCase()}`,
+    products: order.products.map((p) => ({ name: p.name, weight: p.weight })),
+    boxLabel: order.box?.internalId,
+  });
 }
 
 async function recomputeBoxWeight(boxId: string) {

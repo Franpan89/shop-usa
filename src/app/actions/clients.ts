@@ -65,6 +65,8 @@ export async function updateClient(id: string, formData: FormData) {
   const serviceFeePercent = parseFloat(formData.get('serviceFeePercent') as string);
   const shippingCategoryRaw = formData.get('shippingCategoryId') as string;
   const shippingCategoryId = shippingCategoryRaw && shippingCategoryRaw.trim() !== '' ? shippingCategoryRaw : null;
+  const emailRaw = (formData.get('email') as string)?.trim();
+  const email = emailRaw ? emailRaw : null;
 
   await prisma.client.update({
     where: { id },
@@ -75,6 +77,7 @@ export async function updateClient(id: string, formData: FormData) {
       country,
       city,
       phone,
+      email,
       birthday,
       notes,
       deliveryMethod,

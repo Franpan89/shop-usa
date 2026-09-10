@@ -26,16 +26,16 @@ model User {
   id        String   @id @default(cuid())
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
   email     String   @unique
-  role      Role     @default(STAFF)
+  role      Role     @default(SUBADMIN)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 enum Role {
-  SUPERADMIN
   ADMIN
-  STAFF
+  SUBADMIN
 }
 
 model Client {
@@ -45,6 +45,7 @@ model Client {
   code      String
   name      String
   idNumber  String?
+  email     String?  @unique
   country   String
   city      String
   phone           String

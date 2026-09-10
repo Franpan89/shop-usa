@@ -2,6 +2,7 @@
 
 import prisma from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import { requireAdmin } from '@/lib/auth';
 
 async function getTenantId() {
   const tenant = await prisma.tenant.findFirst();
@@ -14,6 +15,7 @@ function parseUnit(raw: FormDataEntryValue | null): 'HALF_LB' | 'LB' {
 }
 
 export async function createShippingCategory(formData: FormData) {
+  await requireAdmin();
   const tenantId = await getTenantId();
   const name = (formData.get('name') as string)?.trim();
   const country = (formData.get('country') as string)?.trim();
@@ -29,6 +31,7 @@ export async function createShippingCategory(formData: FormData) {
 }
 
 export async function updateShippingCategory(formData: FormData) {
+  await requireAdmin();
   const id = formData.get('id') as string;
   const rate = parseFloat(formData.get('rate') as string);
   const unit = parseUnit(formData.get('unit'));
@@ -43,6 +46,7 @@ export async function updateShippingCategory(formData: FormData) {
 }
 
 export async function deleteShippingCategory(id: string) {
+  await requireAdmin();
   await prisma.shippingCategory.delete({ where: { id } });
   revalidatePath('/configuraciones');
 }
