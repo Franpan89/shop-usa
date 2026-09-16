@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
+import BrandLogo from "./BrandLogo";
 import { signOut } from "@/app/actions/auth";
 
 interface SidebarProps {
@@ -14,7 +15,7 @@ export default function Sidebar({ role, userName }: SidebarProps) {
   const pathname = usePathname();
 
   const navLinks = [
-    { name: "Dashboard", href: "/", icon: "📊" },
+    { name: "Dashboard", href: "/dashboard", icon: "📊" },
     { name: "Clientes", href: "/clientes", icon: "👥" },
     { name: "Pedidos", href: "/pedidos", icon: "🛒" },
     { name: "Cajas", href: "/cajas", icon: "📦" },
@@ -37,9 +38,8 @@ export default function Sidebar({ role, userName }: SidebarProps) {
 
   return (
     <aside className="sidebar glass-panel" style={{ height: 'calc(100vh - 48px)', margin: '24px 0 24px 24px' }}>
-      <Link href="/" className="logo-container">
-        <span className="logo-gradient">ShopUSA</span>
-        <span>SaaS</span>
+      <Link href="/dashboard" className="logo-container">
+        <BrandLogo height={30} />
       </Link>
 
       <nav className="nav-menu mt-8">

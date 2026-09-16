@@ -14,7 +14,7 @@ export async function signIn(formData: FormData) {
   if (error) return { error: 'Correo o contraseña incorrectos' };
 
   const staff = await prisma.user.findUnique({ where: { email } });
-  if (staff) redirect('/');
+  if (staff) redirect('/dashboard');
 
   const client = await prisma.client.findUnique({ where: { email } });
   if (client) redirect('/portal');

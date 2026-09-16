@@ -1,0 +1,49 @@
+.wrap {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.path {
+  fill: none;
+  stroke: var(--mkt-accent);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 6 8;
+  stroke-dashoffset: 400;
+  opacity: 0.85;
+  transition: stroke-dashoffset 1.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pathAnimate {
+  stroke-dashoffset: 0;
+}
+
+.node {
+  fill: var(--mkt-ink);
+  stroke: var(--mkt-accent);
+  stroke-width: 1.4;
+}
+
+.nodeOrigin {
+  fill: var(--mkt-accent);
+  stroke: var(--mkt-accent);
+}
+
+.dot {
+  fill: rgba(255, 246, 243, 0.16);
+}
+
+.label {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  fill: var(--mkt-paper);
+}
+
+.labelMuted {
+  font-family: var(--font-body);
+  font-size: 11px;
+  fill: var(--mkt-paper-muted);
+}

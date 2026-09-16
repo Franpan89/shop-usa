@@ -1,16 +1,18 @@
 import Link from 'next/link';
 import { requirePortalClient } from '@/lib/auth';
 import { signOut } from '@/app/actions/auth';
+import BgBlobs from '@/components/BgBlobs';
+import BrandLogo from '@/components/BrandLogo';
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const client = await requirePortalClient();
 
   return (
     <div style={{ maxWidth: '960px', margin: '0 auto', padding: '24px' }}>
+      <BgBlobs />
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
         <div className="logo-container">
-          <span className="logo-gradient">ShopUSA</span>
-          <span>SaaS</span>
+          <BrandLogo height={30} />
         </div>
         <nav style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
           <Link href="/portal" style={{ textDecoration: 'none', color: 'var(--text-primary)', fontWeight: 600 }}>Mis Pedidos</Link>

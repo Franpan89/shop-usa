@@ -43,7 +43,7 @@ export async function requireStaff() {
 /** Redirects anyone who isn't Admin — use for Configuraciones and Usuarios. */
 export async function requireAdmin() {
   const user = await requireStaff();
-  if (user.role !== 'ADMIN') redirect('/');
+  if (user.role !== 'ADMIN') redirect('/dashboard');
   return user;
 }
 
@@ -51,6 +51,6 @@ export async function requireAdmin() {
 export async function requirePortalClient() {
   const user = await getCurrentUser();
   if (!user) redirect('/login');
-  if (user.kind !== 'portal') redirect('/');
+  if (user.kind !== 'portal') redirect('/dashboard');
   return user;
 }
