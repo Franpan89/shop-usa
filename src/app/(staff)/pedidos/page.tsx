@@ -45,7 +45,6 @@ export default async function PedidosPage({ searchParams }: Props) {
     where: { tenantId: tenant.id },
     select: {
       name: true,
-      defaultWeight: true,
       defaultPurchaseValue: true,
       defaultPurchasedBy: true,
     },
@@ -237,7 +236,7 @@ export default async function PedidosPage({ searchParams }: Props) {
                 </td>
                 <td>{order.products.length} prod.</td>
                 <td style={{ whiteSpace: 'nowrap' }}>
-                  {order.products.reduce((s, p) => s + p.weight, 0).toFixed(2)} lbs
+                  {order.weight.toFixed(2)} lbs
                 </td>
                 <td>
                   {order.box ? (

@@ -30,18 +30,19 @@ export async function sendOrderShippedEmail(params: {
   to: string;
   clientName: string;
   orderRef: string;
-  products: { name: string; weight: number }[];
+  products: { name: string }[];
+  weight: number;
   boxLabel?: string;
 }) {
-  const { to, clientName, orderRef, products, boxLabel } = params;
-  const itemsHtml = products.map((p) => `<li>${p.name} — ${p.weight.toFixed(2)} lbs</li>`).join('');
+  const { to, clientName, orderRef, products, weight, boxLabel } = params;
+  const itemsHtml = products.map((p) => `<li>${p.name}</li>`).join('');
 
   await sendMail({
     to,
     subject: `Tu pedido ${orderRef} fue enviado`,
     html: wrapper('📦 Tu pedido está en camino', `
       <p>Hola ${clientName},</p>
-      <p>Tu pedido <strong>${orderRef}</strong>${boxLabel ? ` (caja ${boxLabel})` : ''} ya fue enviado. Estos son los productos incluidos:</p>
+      <p>Tu pedido <strong>${orderRef}</strong>${boxLabel ? ` (caja ${boxLabel})` : ''} ya fue enviado, con un peso total de <strong>${weight.toFixed(2)} lbs</strong>. Estos son los productos incluidos:</p>
       <ul>${itemsHtml}</ul>
       <p>Te avisaremos cuando llegue y esté listo para retirar.</p>
     `),
@@ -51,17 +52,18 @@ export async function sendOrderShippedEmail(params: {
 export async function sendBoxArrivedEmail(params: {
   to: string;
   clientName: string;
-  products: { name: string; weight: number }[];
+  products: { name: string }[];
+  weight: number;
 }) {
-  const { to, clientName, products } = params;
-  const itemsHtml = products.map((p) => `<li>${p.name} — ${p.weight.toFixed(2)} lbs</li>`).join('');
+  const { to, clientName, products, weight } = params;
+  const itemsHtml = products.map((p) => `<li>${p.name}</li>`).join('');
 
   await sendMail({
     to,
     subject: `Tus productos ya están listos para retirar`,
     html: wrapper('✅ Listo para retirar', `
       <p>Hola ${clientName},</p>
-      <p>Tus productos ya llegaron y están listos para retirar:</p>
+      <p>Tus productos ya llegaron (peso total: <strong>${weight.toFixed(2)} lbs</strong>) y están listos para retirar:</p>
       <ul>${itemsHtml}</ul>
     `),
   });

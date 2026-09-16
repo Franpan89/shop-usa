@@ -6,7 +6,13 @@ import { ORDER_STATUSES, normalizeOrderStatus, type OrderStatus } from '@/lib/or
 import { recordCatalogUsage } from './productCatalog';
 import { sendOrderShippedEmail } from '@/lib/email';
 
-export async function createOrder(clientId: string, products: any[]) {
+const TAX_RATE = 0.065; // 6.5% on SHOPUSA purchase values
+
+export async function createOrder(
+  clientId: string,
+  shipment: { weight: number; shippingCost: number },
+  products: any[],
+) {
   if (!clientId || !products || products.length === 0) {
     throw new Error('Client and at least one product are required');
   }
@@ -15,8 +21,6 @@ export async function createOrder(clientId: string, products: any[]) {
   const tenant = await prisma.tenant.findFirst();
   if (!tenant) throw new Error('No tenant found');
 
-  const TAX_RATE = 0.065; // 6.5% on SHOPUSA purchase values
-
   // Fetch client's service fee %
   const client = await prisma.client.findUnique({
     where: { id: clientId },
@@ -24,30 +28,31 @@ export async function createOrder(clientId: string, products: any[]) {
   });
   const feePercent = client?.serviceFeePercent ?? 20;
 
+  // The order is weighed and shipped as one package — weight and shipping
+  // cost are a single figure for the whole order, not per product.
+  const weight = shipment.weight || 0;
+  const shippingCost = shipment.shippingCost || 0;
+
   // Calculate totals
-  let baseAmount = 0;
   let taxableAmount = 0;
   let totalPrepaid = 0;
 
   const productData = products.map((p: any) => {
-    const shippingCost = parseFloat(p.shippingCost) || 0;
     const purchaseValue = p.purchasedBy === 'SHOPUSA' ? (parseFloat(p.purchaseValue) || 0) : 0;
     const prepaid = parseFloat(p.prepaidAmount) || 0;
 
-    baseAmount += shippingCost + purchaseValue;
     if (p.purchasedBy === 'SHOPUSA') taxableAmount += purchaseValue;
     totalPrepaid += prepaid;
 
     return {
       name: p.name,
-      weight: parseFloat(p.weight) || 0,
       purchasedBy: p.purchasedBy,
       purchaseValue: p.purchasedBy === 'SHOPUSA' ? parseFloat(p.purchaseValue) : null,
       prepaidAmount: prepaid,
-      shippingCost,
     };
   });
 
+  const baseAmount = shippingCost + taxableAmount;
   const taxAmount = parseFloat((taxableAmount * TAX_RATE).toFixed(2));
   // Service fee is 20% (or the client's rate) of the SHOPUSA purchase value + its
   // tax only — shipping cost never attracts the fee, whether the item was
@@ -60,6 +65,8 @@ export async function createOrder(clientId: string, products: any[]) {
     data: {
       tenantId: tenant.id,
       clientId,
+      weight,
+      shippingCost,
       totalAmount,
       balance,
       taxAmount,
@@ -76,7 +83,6 @@ export async function createOrder(clientId: string, products: any[]) {
   for (const p of productData) {
     await recordCatalogUsage(tenant.id, {
       name: p.name,
-      weight: p.weight,
       purchasedBy: p.purchasedBy as 'CLIENT' | 'SHOPUSA',
       purchaseValue: p.purchaseValue ?? null,
     });
@@ -86,6 +92,139 @@ export async function createOrder(clientId: string, products: any[]) {
   revalidatePath('/productos');
   revalidatePath(`/clientes/${clientId}`);
   return { success: true, orderId: order.id };
+}
+
+export interface ProductFormInput {
+  name: string;
+  purchasedBy: 'CLIENT' | 'SHOPUSA';
+  purchaseValue: number | null;
+  prepaidAmount: number;
+}
+
+/**
+ * Recomputes an order's tax/fee/total from its current products and its own
+ * weight/shippingCost, then sets balance from the given "already paid"
+ * figure — never re-derived from products' prepaidAmount, since
+ * registerPayment() adjusts balance directly and isn't reflected back onto
+ * any single product.
+ */
+async function recalcOrderTotals(orderId: string, paidSoFar: number) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { products: true },
+  });
+  if (!order) throw new Error('Order not found');
+
+  const taxableAmount = order.products.reduce(
+    (sum, p) => sum + (p.purchasedBy === 'SHOPUSA' ? p.purchaseValue ?? 0 : 0),
+    0,
+  );
+  const baseAmount = order.shippingCost + taxableAmount;
+  const taxAmount = parseFloat((taxableAmount * TAX_RATE).toFixed(2));
+  const serviceFeeAmount = parseFloat(((taxableAmount + taxAmount) * order.serviceFeePercent / 100).toFixed(2));
+  const totalAmount = parseFloat((baseAmount + taxAmount + serviceFeeAmount).toFixed(2));
+  const balance = parseFloat((totalAmount - paidSoFar).toFixed(2));
+
+  await prisma.order.update({
+    where: { id: orderId },
+    data: { totalAmount, taxAmount, serviceFeeAmount, balance },
+  });
+}
+
+export async function addProductToOrder(orderId: string, input: ProductFormInput) {
+  if (!orderId) throw new Error('Order id required');
+  if (!input.name?.trim()) throw new Error('El nombre es requerido');
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { totalAmount: true, balance: true, clientId: true, tenantId: true },
+  });
+  if (!order) throw new Error('Order not found');
+
+  const paidSoFar = order.totalAmount - order.balance;
+  const purchaseValue = input.purchasedBy === 'SHOPUSA' ? input.purchaseValue ?? 0 : null;
+
+  await prisma.product.create({
+    data: {
+      orderId,
+      name: input.name.trim(),
+      purchasedBy: input.purchasedBy,
+      purchaseValue,
+      prepaidAmount: input.prepaidAmount,
+    },
+  });
+
+  await recalcOrderTotals(orderId, paidSoFar + input.prepaidAmount);
+  await recordCatalogUsage(order.tenantId, {
+    name: input.name.trim(),
+    purchasedBy: input.purchasedBy,
+    purchaseValue,
+  });
+
+  revalidatePath('/pedidos');
+  revalidatePath(`/pedidos/${orderId}`);
+  revalidatePath('/productos');
+  revalidatePath('/cajas');
+  revalidatePath(`/clientes/${order.clientId}`);
+}
+
+export async function updateProduct(productId: string, input: ProductFormInput) {
+  if (!productId) throw new Error('Product id required');
+  if (!input.name?.trim()) throw new Error('El nombre es requerido');
+
+  const existing = await prisma.product.findUnique({
+    where: { id: productId },
+    include: { order: { select: { id: true, totalAmount: true, balance: true, clientId: true } } },
+  });
+  if (!existing) throw new Error('Product not found');
+
+  const orderId = existing.orderId;
+  const paidSoFar = existing.order.totalAmount - existing.order.balance;
+  const purchaseValue = input.purchasedBy === 'SHOPUSA' ? input.purchaseValue ?? 0 : null;
+
+  await prisma.product.update({
+    where: { id: productId },
+    data: {
+      name: input.name.trim(),
+      purchasedBy: input.purchasedBy,
+      purchaseValue,
+      prepaidAmount: input.prepaidAmount,
+    },
+  });
+
+  await recalcOrderTotals(orderId, paidSoFar - existing.prepaidAmount + input.prepaidAmount);
+
+  revalidatePath('/pedidos');
+  revalidatePath(`/pedidos/${orderId}`);
+  revalidatePath('/cajas');
+  revalidatePath(`/clientes/${existing.order.clientId}`);
+}
+
+export async function updateOrderShipment(orderId: string, weight: number, shippingCost: number) {
+  if (!orderId) throw new Error('Order id required');
+  if (!Number.isFinite(weight) || weight < 0) throw new Error('Peso inválido');
+  if (!Number.isFinite(shippingCost) || shippingCost < 0) throw new Error('Costo de envío inválido');
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { totalAmount: true, balance: true, clientId: true, boxId: true },
+  });
+  if (!order) throw new Error('Order not found');
+
+  const paidSoFar = order.totalAmount - order.balance;
+
+  await prisma.order.update({
+    where: { id: orderId },
+    data: { weight, shippingCost },
+  });
+
+  await recalcOrderTotals(orderId, paidSoFar);
+  if (order.boxId) await recomputeBoxWeight(order.boxId);
+
+  revalidatePath('/pedidos');
+  revalidatePath(`/pedidos/${orderId}`);
+  revalidatePath('/cajas');
+  revalidatePath(`/clientes/${order.clientId}`);
 }
 
 export async function deleteOrder(orderId: string) {
@@ -255,22 +394,19 @@ async function notifyOrderShipped(orderId: string) {
     to: order.client.email,
     clientName: order.client.name,
     orderRef: `#${order.id.slice(-6).toUpperCase()}`,
-    products: order.products.map((p) => ({ name: p.name, weight: p.weight })),
+    products: order.products.map((p) => ({ name: p.name })),
+    weight: order.weight,
     boxLabel: order.box?.internalId,
   });
 }
 
 async function recomputeBoxWeight(boxId: string) {
-  const orders = await prisma.order.findMany({
+  const result = await prisma.order.aggregate({
     where: { boxId },
-    include: { products: true },
+    _sum: { weight: true },
   });
-  const totalWeight = orders.reduce(
-    (sum, o) => sum + o.products.reduce((s, p) => s + (p.weight ?? 0), 0),
-    0,
-  );
   await prisma.box.update({
     where: { id: boxId },
-    data: { totalWeight: parseFloat(totalWeight.toFixed(2)) },
+    data: { totalWeight: parseFloat((result._sum.weight ?? 0).toFixed(2)) },
   });
 }

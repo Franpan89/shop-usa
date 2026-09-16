@@ -7,7 +7,6 @@ export type PurchasedByValue = 'CLIENT' | 'SHOPUSA';
 
 export interface CatalogInput {
   name: string;
-  defaultWeight?: number | null;
   defaultPurchaseValue?: number | null;
   defaultPurchasedBy?: PurchasedByValue;
   notes?: string | null;
@@ -24,7 +23,6 @@ export async function createCatalogEntry(input: CatalogInput) {
     data: {
       tenantId: tenant.id,
       name,
-      defaultWeight: input.defaultWeight ?? null,
       defaultPurchaseValue: input.defaultPurchaseValue ?? null,
       defaultPurchasedBy: input.defaultPurchasedBy ?? 'CLIENT',
       notes: input.notes ?? null,
@@ -45,7 +43,6 @@ export async function updateCatalogEntry(id: string, input: CatalogInput) {
     where: { id },
     data: {
       name,
-      defaultWeight: input.defaultWeight ?? null,
       defaultPurchaseValue: input.defaultPurchaseValue ?? null,
       defaultPurchasedBy: input.defaultPurchasedBy ?? 'CLIENT',
       notes: input.notes ?? null,
@@ -72,7 +69,6 @@ export async function recordCatalogUsage(
   tenantId: string,
   product: {
     name: string;
-    weight: number;
     purchasedBy: PurchasedByValue;
     purchaseValue?: number | null;
   },
@@ -86,7 +82,6 @@ export async function recordCatalogUsage(
     create: {
       tenantId,
       name,
-      defaultWeight: product.weight || null,
       defaultPurchaseValue: product.purchaseValue ?? null,
       defaultPurchasedBy: product.purchasedBy,
       timesShipped: 1,

@@ -87,6 +87,9 @@ model Order {
   taxAmount         Float    @default(0)
   serviceFeePercent Float    @default(20)
   serviceFeeAmount  Float    @default(0)
+  // Weighed and shipped as one package — one weight/cost per order, not per item.
+  weight            Float    @default(0)
+  shippingCost      Float    @default(0)
   products          Product[]
   
   createdAt   DateTime @default(now())
@@ -98,11 +101,9 @@ model Product {
   orderId       String
   order         Order       @relation(fields: [orderId], references: [id])
   name          String
-  weight        Float
   purchasedBy   PurchasedBy @default(CLIENT)
   purchaseValue Float?
   prepaidAmount Float       @default(0)
-  shippingCost  Float       @default(0)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 }
@@ -180,7 +181,6 @@ model ProductCatalog {
   tenantId             String
   tenant               Tenant       @relation(fields: [tenantId], references: [id])
   name                 String
-  defaultWeight        Float?
   defaultPurchaseValue Float?
   defaultPurchasedBy   PurchasedBy  @default(CLIENT)
   notes                String?

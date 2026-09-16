@@ -131,7 +131,7 @@ export default async function BoxDetailPage({ params }: Props) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {Array.from(ordersByClient.values()).map(({ client, orders }) => {
-            const clientWeight = orders.reduce((s, o) => s + o.products.reduce((ss, p) => ss + p.weight, 0), 0);
+            const clientWeight = orders.reduce((s, o) => s + o.weight, 0);
             const clientTotal = orders.reduce((s, o) => s + o.totalAmount, 0);
             const clientBalance = orders.reduce((s, o) => s + o.balance, 0);
 
@@ -180,7 +180,7 @@ export default async function BoxDetailPage({ params }: Props) {
                         {statusLabel(order.status)}
                       </span>
                       <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        {new Date(order.orderDate).toLocaleDateString('es-ES')}
+                        {new Date(order.orderDate).toLocaleDateString('es-ES')} · {order.weight.toFixed(2)} lbs · Envío ${order.shippingCost.toFixed(2)}
                       </span>
                     </div>
 
@@ -198,17 +198,14 @@ export default async function BoxDetailPage({ params }: Props) {
                           <thead>
                             <tr>
                               <th>PRODUCTO</th>
-                              <th>PESO</th>
                               <th>COMPRADO POR</th>
                               <th style={{ textAlign: 'right' }}>VALOR</th>
-                              <th style={{ textAlign: 'right' }}>ENVÍO</th>
                             </tr>
                           </thead>
                           <tbody>
                             {order.products.map((p) => (
                               <tr key={p.id}>
                                 <td style={{ fontWeight: 600 }}>{p.name}</td>
-                                <td>{p.weight.toFixed(2)} lbs</td>
                                 <td>
                                   <span className={`badge ${p.purchasedBy === 'SHOPUSA' ? 'badge-warning' : 'badge-secondary'}`} style={{ fontSize: '0.7rem' }}>
                                     {p.purchasedBy === 'SHOPUSA' ? '🏪 ShopUSA' : '👤 Cliente'}
@@ -217,7 +214,6 @@ export default async function BoxDetailPage({ params }: Props) {
                                 <td style={{ textAlign: 'right' }}>
                                   {p.purchaseValue != null ? `$${p.purchaseValue.toFixed(2)}` : '—'}
                                 </td>
-                                <td style={{ textAlign: 'right' }}>${p.shippingCost.toFixed(2)}</td>
                               </tr>
                             ))}
                           </tbody>

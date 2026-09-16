@@ -80,18 +80,20 @@ export async function notifyBoxArrival(boxId: string) {
   });
   if (!box) throw new Error('Caja no encontrada');
 
-  const ordersByClient = new Map<string, { client: typeof box.orders[number]['client']; products: { name: string; weight: number }[] }>();
+  const ordersByClient = new Map<string, { client: typeof box.orders[number]['client']; products: { name: string }[]; weight: number }>();
   for (const order of box.orders) {
     if (!ordersByClient.has(order.clientId)) {
-      ordersByClient.set(order.clientId, { client: order.client, products: [] });
+      ordersByClient.set(order.clientId, { client: order.client, products: [], weight: 0 });
     }
-    ordersByClient.get(order.clientId)!.products.push(...order.products.map((p) => ({ name: p.name, weight: p.weight })));
+    const entry = ordersByClient.get(order.clientId)!;
+    entry.products.push(...order.products.map((p) => ({ name: p.name })));
+    entry.weight += order.weight;
   }
 
   let sent = 0;
-  for (const { client, products } of ordersByClient.values()) {
+  for (const { client, products, weight } of ordersByClient.values()) {
     if (!client.email || products.length === 0) continue;
-    await sendBoxArrivedEmail({ to: client.email, clientName: client.name, products });
+    await sendBoxArrivedEmail({ to: client.email, clientName: client.name, products, weight });
     sent++;
   }
 

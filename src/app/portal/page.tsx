@@ -35,7 +35,7 @@ export default async function PortalPedidosPage() {
                   )}
                 </div>
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                  {new Date(order.orderDate).toLocaleDateString('es-ES')}
+                  {new Date(order.orderDate).toLocaleDateString('es-ES')} · {order.weight.toFixed(2)} lbs
                 </span>
               </div>
 
@@ -51,14 +51,12 @@ export default async function PortalPedidosPage() {
                     <thead>
                       <tr>
                         <th>PRODUCTO</th>
-                        <th>PESO</th>
                       </tr>
                     </thead>
                     <tbody>
                       {order.products.map((p) => (
                         <tr key={p.id}>
                           <td style={{ fontWeight: 600 }}>{p.name}</td>
-                          <td>{p.weight.toFixed(2)} lbs</td>
                         </tr>
                       ))}
                     </tbody>

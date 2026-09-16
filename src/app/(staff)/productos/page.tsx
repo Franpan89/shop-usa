@@ -21,7 +21,7 @@ export default async function ProductosPage() {
         <div>
           <h1 className="page-title">Catálogo de Productos</h1>
           <p className="page-subtitle">
-            Productos enviados previamente. Se usan para autocompletar peso, valor y otros datos al crear nuevos pedidos.
+            Productos enviados previamente. Se usan para autocompletar valor y otros datos al crear nuevos pedidos.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '16px' }}>
@@ -45,7 +45,6 @@ export default async function ProductosPage() {
           <thead>
             <tr>
               <th>PRODUCTO</th>
-              <th>PESO POR DEFECTO</th>
               <th>VALOR POR DEFECTO</th>
               <th>COMPRADO POR</th>
               <th>VECES ENVIADO</th>
@@ -62,7 +61,6 @@ export default async function ProductosPage() {
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>{e.notes}</div>
                   )}
                 </td>
-                <td>{e.defaultWeight != null ? `${e.defaultWeight.toFixed(2)} lbs` : '—'}</td>
                 <td>{e.defaultPurchaseValue != null ? `$${e.defaultPurchaseValue.toFixed(2)}` : '—'}</td>
                 <td>
                   <span className={`badge ${e.defaultPurchasedBy === 'SHOPUSA' ? 'badge-warning' : 'badge-secondary'}`} style={{ fontSize: '0.75rem' }}>
@@ -76,7 +74,6 @@ export default async function ProductosPage() {
                     entry={{
                       id: e.id,
                       name: e.name,
-                      defaultWeight: e.defaultWeight,
                       defaultPurchaseValue: e.defaultPurchaseValue,
                       defaultPurchasedBy: e.defaultPurchasedBy as 'CLIENT' | 'SHOPUSA',
                       notes: e.notes,
@@ -87,7 +84,7 @@ export default async function ProductosPage() {
             ))}
             {entries.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
                   Aún no hay productos en el catálogo. Crea uno o serán agregados automáticamente al registrar pedidos.
                 </td>
               </tr>

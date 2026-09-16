@@ -4,6 +4,8 @@ import prisma from '@/lib/prisma';
 import { statusLabel, statusBadgeClass } from '@/lib/orderStatus';
 import OrderStatusChanger from './OrderStatusChanger';
 import RegisterPaymentButton from './RegisterPaymentButton';
+import ProductFormModal from './ProductFormModal';
+import EditShipmentModal from './EditShipmentModal';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -15,13 +17,21 @@ export default async function OrderDetailPage({ params }: Props) {
   const order = await prisma.order.findUnique({
     where: { id },
     include: {
-      client: true,
+      client: { include: { shippingCategory: true } },
       products: true,
       box: true,
     },
   });
 
   if (!order) notFound();
+
+  const catalog = await prisma.productCatalog.findMany({
+    where: { tenantId: order.tenantId },
+    select: { name: true, defaultPurchaseValue: true, defaultPurchasedBy: true },
+    orderBy: [{ timesShipped: 'desc' }, { name: 'asc' }],
+  });
+  const shippingRate = order.client.shippingCategory?.rate ?? 0;
+  const shippingUnit = order.client.shippingCategory?.unit ?? 'HALF_LB';
 
   const amountPaid = order.totalAmount - order.balance;
   const ref = `#${order.id.slice(-6).toUpperCase()}`;
@@ -86,6 +96,23 @@ export default async function OrderDetailPage({ params }: Props) {
           <div className="stat-title">Subtotal Productos</div>
           <div className="stat-value" style={{ fontSize: '1.5rem' }}>${baseAmount.toFixed(2)}</div>
         </div>
+        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="stat-title">Peso</div>
+            <EditShipmentModal
+              orderId={order.id}
+              weight={order.weight}
+              shippingCost={order.shippingCost}
+              shippingRate={shippingRate}
+              shippingUnit={shippingUnit}
+            />
+          </div>
+          <div className="stat-value" style={{ fontSize: '1.5rem' }}>{order.weight.toFixed(2)} lbs</div>
+        </div>
+        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
+          <div className="stat-title">Costo de Envío</div>
+          <div className="stat-value" style={{ fontSize: '1.5rem' }}>${order.shippingCost.toFixed(2)}</div>
+        </div>
         {order.taxAmount > 0 && (
           <div className="glass-panel stat-card" style={{ padding: '20px' }}>
             <div className="stat-title">Impuesto (6.5%)</div>
@@ -120,29 +147,30 @@ export default async function OrderDetailPage({ params }: Props) {
 
       {/* Products table */}
       <div className="glass-panel" style={{ padding: '32px' }}>
-        <h2 style={{ marginBottom: '24px', fontSize: '1.4rem' }}>Productos / Ítems ({order.products.length})</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Productos / Ítems ({order.products.length})</h2>
+          <ProductFormModal orderId={order.id} catalog={catalog} />
+        </div>
         <div className="table-container">
           <table className="data-table">
             <thead>
               <tr>
                 <th>#</th>
                 <th>NOMBRE</th>
-                <th>PESO (lbs)</th>
                 <th>COMPRADO POR</th>
                 <th style={{ textAlign: 'right' }}>VALOR COMPRA</th>
-                <th style={{ textAlign: 'right' }}>COSTO ENVÍO</th>
                 <th style={{ textAlign: 'right' }}>PREPAGO</th>
                 <th style={{ textAlign: 'right' }}>SUBTOTAL</th>
+                <th>ACCIONES</th>
               </tr>
             </thead>
             <tbody>
               {order.products.map((p, i) => {
-                const subtotal = p.shippingCost + (p.purchasedBy === 'SHOPUSA' ? (p.purchaseValue ?? 0) : 0);
+                const subtotal = p.purchasedBy === 'SHOPUSA' ? (p.purchaseValue ?? 0) : 0;
                 return (
                   <tr key={p.id}>
                     <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{i + 1}</td>
                     <td style={{ fontWeight: 600 }}>{p.name}</td>
-                    <td>{p.weight.toFixed(2)} lbs</td>
                     <td>
                       <span className={`badge ${p.purchasedBy === 'SHOPUSA' ? 'badge-warning' : 'badge-secondary'}`}>
                         {p.purchasedBy === 'SHOPUSA' ? '🏪 ShopUSA' : '👤 Cliente'}
@@ -153,17 +181,19 @@ export default async function OrderDetailPage({ params }: Props) {
                         ? `$${p.purchaseValue.toFixed(2)}`
                         : '—'}
                     </td>
-                    <td style={{ textAlign: 'right' }}>${p.shippingCost.toFixed(2)}</td>
                     <td style={{ textAlign: 'right', color: '#10b981', fontWeight: 600 }}>
                       {p.prepaidAmount > 0 ? `$${p.prepaidAmount.toFixed(2)}` : '—'}
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: 700 }}>${subtotal.toFixed(2)}</td>
+                    <td>
+                      <ProductFormModal orderId={order.id} catalog={catalog} product={p} />
+                    </td>
                   </tr>
                 );
               })}
               {order.products.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
                     Sin productos registrados.
                   </td>
                 </tr>
@@ -172,13 +202,14 @@ export default async function OrderDetailPage({ params }: Props) {
             {order.products.length > 0 && (
               <tfoot>
                 <tr style={{ borderTop: '2px solid rgba(128,128,128,0.2)' }}>
-                  <td colSpan={6} style={{ fontWeight: 700, padding: '14px 16px' }}>TOTALES</td>
+                  <td colSpan={4} style={{ fontWeight: 700, padding: '14px 16px' }}>TOTALES</td>
                   <td style={{ textAlign: 'right', fontWeight: 700, color: '#10b981', padding: '14px 16px' }}>
                     ${order.products.reduce((s, p) => s + p.prepaidAmount, 0).toFixed(2)}
                   </td>
                   <td style={{ textAlign: 'right', fontWeight: 800, fontSize: '1.05rem', padding: '14px 16px' }}>
                     ${order.totalAmount.toFixed(2)}
                   </td>
+                  <td />
                 </tr>
               </tfoot>
             )}

@@ -8,7 +8,6 @@ interface Props {
   entry: {
     id: string;
     name: string;
-    defaultWeight: number | null;
     defaultPurchaseValue: number | null;
     defaultPurchasedBy: 'CLIENT' | 'SHOPUSA';
     notes: string | null;

@@ -22,7 +22,6 @@ interface Client {
 
 interface CatalogEntry {
   name: string;
-  defaultWeight: number | null;
   defaultPurchaseValue: number | null;
   defaultPurchasedBy: string;
 }
@@ -36,19 +35,15 @@ interface NewOrderModalProps {
 type Product = {
   id: number;
   name: string;
-  weight: string;
   purchasedBy: string;
   purchaseValue: string;
   prepaidAmount: string;
-  shippingCost: string;
-  shippingAuto: boolean;
 };
 
 const EMPTY_PRODUCT = (): Product => ({
   id: Date.now() + Math.random(),
-  name: '', weight: '', purchasedBy: 'CLIENT',
-  purchaseValue: '', prepaidAmount: '', shippingCost: '',
-  shippingAuto: true,
+  name: '', purchasedBy: 'CLIENT',
+  purchaseValue: '', prepaidAmount: '',
 });
 
 function calcAutoShipping(weight: string, rate: number, unit: 'HALF_LB' | 'LB'): string {
@@ -67,6 +62,10 @@ export default function NewOrderModal({ clients, catalog = [], initialClientId }
   const [clientId, setClientId] = useState(initialClientId || '');
   const [products, setProducts] = useState<Product[]>([EMPTY_PRODUCT()]);
 
+  const [weight, setWeight] = useState('');
+  const [shippingCost, setShippingCost] = useState('');
+  const [shippingAuto, setShippingAuto] = useState(true);
+
   useEffect(() => {
     if (initialClientId) setClientId(initialClientId);
   }, [initialClientId]);
@@ -75,16 +74,30 @@ export default function NewOrderModal({ clients, catalog = [], initialClientId }
   const shippingRate = selectedClient?.shippingCategory?.rate ?? 0;
   const shippingUnit = selectedClient?.shippingCategory?.unit ?? 'HALF_LB';
 
-  // Recompute auto-shipping costs when client changes
-  useEffect(() => {
-    const client = clients.find(c => c.id === clientId);
+  // Recompute auto-shipping cost when the client (and so its rate) changes.
+  const handleClientChange = (id: string) => {
+    setClientId(id);
+    if (!shippingAuto) return;
+    const client = clients.find(c => c.id === id);
     const rate = client?.shippingCategory?.rate ?? 0;
     const unit = client?.shippingCategory?.unit ?? 'HALF_LB';
-    setProducts(prev => prev.map(p => {
-      if (!p.shippingAuto) return p;
-      return { ...p, shippingCost: calcAutoShipping(p.weight, rate, unit) };
-    }));
-  }, [clientId]);
+    setShippingCost(calcAutoShipping(weight, rate, unit));
+  };
+
+  const handleWeightChange = (value: string) => {
+    setWeight(value);
+    if (shippingAuto) setShippingCost(calcAutoShipping(value, shippingRate, shippingUnit));
+  };
+
+  const handleShippingCostChange = (value: string) => {
+    setShippingCost(value);
+    setShippingAuto(false);
+  };
+
+  const resetShippingAuto = () => {
+    setShippingAuto(true);
+    setShippingCost(calcAutoShipping(weight, shippingRate, shippingUnit));
+  };
 
   const addProduct = () => setProducts(prev => [...prev, EMPTY_PRODUCT()]);
 
@@ -96,22 +109,10 @@ export default function NewOrderModal({ clients, catalog = [], initialClientId }
     setProducts(prev => prev.map(p => {
       if (p.id !== id) return p;
       const updated: Product = { ...p, [field]: value };
-      if (field === 'weight' && p.shippingAuto) {
-        updated.shippingCost = calcAutoShipping(value, shippingRate, shippingUnit);
-      }
-      if (field === 'shippingCost') {
-        updated.shippingAuto = false;
-      }
       // Autocomplete from catalog when a name is set/picked
       if (field === 'name') {
         const match = catalogByName.get(value.trim().toLowerCase());
         if (match) {
-          if (!updated.weight && match.defaultWeight != null) {
-            updated.weight = String(match.defaultWeight);
-            if (updated.shippingAuto) {
-              updated.shippingCost = calcAutoShipping(updated.weight, shippingRate, shippingUnit);
-            }
-          }
           if (match.defaultPurchasedBy === 'CLIENT' || match.defaultPurchasedBy === 'SHOPUSA') {
             updated.purchasedBy = match.defaultPurchasedBy;
           }
@@ -124,25 +125,14 @@ export default function NewOrderModal({ clients, catalog = [], initialClientId }
     }));
   };
 
-  const resetShippingAuto = (id: number) => {
-    setProducts(prev => prev.map(p => {
-      if (p.id !== id) return p;
-      return { ...p, shippingAuto: true, shippingCost: calcAutoShipping(p.weight, shippingRate, shippingUnit) };
-    }));
-  };
-
   // Live totals
   const TAX_RATE = 0.065;
   const feePercent = selectedClient?.serviceFeePercent ?? 20;
-  const baseAmount = products.reduce((sum, p) => {
-    const shipping = parseFloat(p.shippingCost) || 0;
-    const purchase = p.purchasedBy === 'SHOPUSA' ? (parseFloat(p.purchaseValue) || 0) : 0;
-    return sum + shipping + purchase;
-  }, 0);
   const shopusaPurchaseSubtotal = products.reduce((sum, p) => {
     if (p.purchasedBy !== 'SHOPUSA') return sum;
     return sum + (parseFloat(p.purchaseValue) || 0);
   }, 0);
+  const baseAmount = (parseFloat(shippingCost) || 0) + shopusaPurchaseSubtotal;
   const taxAmount = shopusaPurchaseSubtotal * TAX_RATE;
   // Service fee is a % of the SHOPUSA purchase value + its tax only — shipping
   // never attracts the fee, matching actions/orders.ts.
@@ -158,12 +148,19 @@ export default function NewOrderModal({ clients, catalog = [], initialClientId }
     setIsPending(true);
     setError(null);
     try {
-      await createOrder(clientId, products);
+      await createOrder(
+        clientId,
+        { weight: parseFloat(weight) || 0, shippingCost: parseFloat(shippingCost) || 0 },
+        products,
+      );
       setIsOpen(false);
       setProducts([EMPTY_PRODUCT()]);
       setClientId(initialClientId || '');
-    } catch (err: any) {
-      setError(err.message || 'Error al crear pedido');
+      setWeight('');
+      setShippingCost('');
+      setShippingAuto(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al crear pedido');
     } finally {
       setIsPending(false);
     }
@@ -194,7 +191,7 @@ export default function NewOrderModal({ clients, catalog = [], initialClientId }
           <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', alignItems: 'flex-end' }}>
             <div className="input-container" style={{ flex: 1, margin: 0 }}>
               <label>Seleccionar Cliente</label>
-              <select className="input-field" value={clientId} onChange={(e) => setClientId(e.target.value)} required disabled={!!initialClientId}>
+              <select className="input-field" value={clientId} onChange={(e) => handleClientChange(e.target.value)} required disabled={!!initialClientId}>
                 <option value="">-- Seleccione un cliente --</option>
                 {clients.map(c => (
                   <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
@@ -211,6 +208,52 @@ export default function NewOrderModal({ clients, catalog = [], initialClientId }
                 </strong>
               </div>
             )}
+          </div>
+
+          {/* Shipment weight/cost — one figure for the whole package, not per item */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+            <div className="input-container">
+              <label>⚖️ Peso Total del Pedido (lbs)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                className="input-field"
+                value={weight}
+                onChange={(e) => handleWeightChange(e.target.value)}
+                placeholder="0.00"
+                required
+              />
+            </div>
+            <div className="input-container">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label style={{ margin: 0 }}>🚚 Costo de Envío ($)</label>
+                {!shippingAuto && shippingRate > 0 && (
+                  <button
+                    type="button"
+                    onClick={resetShippingAuto}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', color: 'var(--accent-color)', fontWeight: 600, padding: 0 }}
+                  >
+                    ↺ Auto
+                  </button>
+                )}
+              </div>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                className="input-field"
+                value={shippingCost}
+                onChange={(e) => handleShippingCostChange(e.target.value)}
+                placeholder={shippingRate > 0 ? 'Auto-calculado' : '0.00'}
+                style={shippingAuto && shippingCost ? { borderColor: 'rgba(99,102,241,0.4)', background: 'rgba(99,102,241,0.04)' } : {}}
+              />
+              {shippingAuto && shippingCost && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--accent-color)', marginTop: '4px' }}>
+                  ✦ Auto: {Math.ceil((parseFloat(weight) || 0) / (shippingUnit === 'LB' ? 1 : 0.5))} {shippingUnit === 'LB' ? 'lbs' : 'tramos'} × ${shippingRate.toFixed(2)}
+                </div>
+              )}
+            </div>
           </div>
 
           <div>
@@ -254,11 +297,6 @@ export default function NewOrderModal({ clients, catalog = [], initialClientId }
                   </div>
 
                   <div className="input-container">
-                    <label>⚖️ Peso (lbs)</label>
-                    <input type="number" step="0.01" min="0" className="input-field" value={product.weight} onChange={(e) => updateProduct(product.id, 'weight', e.target.value)} placeholder="0.00" required />
-                  </div>
-
-                  <div className="input-container">
                     <label>Comprado por</label>
                     <select className="input-field" value={product.purchasedBy} onChange={(e) => updateProduct(product.id, 'purchasedBy', e.target.value)}>
                       <option value="CLIENT">👤 Cliente</option>
@@ -272,36 +310,6 @@ export default function NewOrderModal({ clients, catalog = [], initialClientId }
                       <input type="number" step="0.01" min="0" className="input-field" value={product.purchaseValue} onChange={(e) => updateProduct(product.id, 'purchaseValue', e.target.value)} placeholder="0.00" required />
                     </div>
                   )}
-
-                  <div className="input-container">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <label style={{ margin: 0 }}>🚚 Costo de Envío ($)</label>
-                      {!product.shippingAuto && shippingRate > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => resetShippingAuto(product.id)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', color: 'var(--accent-color)', fontWeight: 600, padding: 0 }}
-                        >
-                          ↺ Auto
-                        </button>
-                      )}
-                    </div>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      className="input-field"
-                      value={product.shippingCost}
-                      onChange={(e) => updateProduct(product.id, 'shippingCost', e.target.value)}
-                      placeholder={shippingRate > 0 ? 'Auto-calculado' : '0.00'}
-                      style={product.shippingAuto && product.shippingCost ? { borderColor: 'rgba(99,102,241,0.4)', background: 'rgba(99,102,241,0.04)' } : {}}
-                    />
-                    {product.shippingAuto && product.shippingCost && (
-                      <div style={{ fontSize: '0.72rem', color: 'var(--accent-color)', marginTop: '4px' }}>
-                        ✦ Auto: {Math.ceil((parseFloat(product.weight) || 0) / (shippingUnit === 'LB' ? 1 : 0.5))} {shippingUnit === 'LB' ? 'lbs' : 'tramos'} × ${shippingRate.toFixed(2)}
-                      </div>
-                    )}
-                  </div>
 
                   <div className="input-container">
                     <label>✅ Abono / Prepago ($)</label>

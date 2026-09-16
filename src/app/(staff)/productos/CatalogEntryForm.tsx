@@ -6,7 +6,6 @@ import Modal from '@/components/Modal';
 export interface CatalogEntryValues {
   id?: string;
   name: string;
-  defaultWeight: number | null;
   defaultPurchaseValue: number | null;
   defaultPurchasedBy: 'CLIENT' | 'SHOPUSA';
   notes: string | null;
@@ -19,7 +18,6 @@ interface Props {
   initial?: Partial<CatalogEntryValues>;
   onSubmit: (values: {
     name: string;
-    defaultWeight: number | null;
     defaultPurchaseValue: number | null;
     defaultPurchasedBy: 'CLIENT' | 'SHOPUSA';
     notes: string | null;
@@ -28,7 +26,6 @@ interface Props {
 
 export default function CatalogEntryForm({ isOpen, onClose, title, initial, onSubmit }: Props) {
   const [name, setName] = useState(initial?.name ?? '');
-  const [weight, setWeight] = useState(initial?.defaultWeight != null ? String(initial.defaultWeight) : '');
   const [purchaseValue, setPurchaseValue] = useState(initial?.defaultPurchaseValue != null ? String(initial.defaultPurchaseValue) : '');
   const [purchasedBy, setPurchasedBy] = useState<'CLIENT' | 'SHOPUSA'>(initial?.defaultPurchasedBy ?? 'CLIENT');
   const [notes, setNotes] = useState(initial?.notes ?? '');
@@ -42,14 +39,13 @@ export default function CatalogEntryForm({ isOpen, onClose, title, initial, onSu
     try {
       await onSubmit({
         name,
-        defaultWeight: weight.trim() ? parseFloat(weight) : null,
         defaultPurchaseValue: purchaseValue.trim() ? parseFloat(purchaseValue) : null,
         defaultPurchasedBy: purchasedBy,
         notes: notes.trim() || null,
       });
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Error al guardar');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al guardar');
     } finally {
       setPending(false);
     }
@@ -76,31 +72,17 @@ export default function CatalogEntryForm({ isOpen, onClose, title, initial, onSu
           />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-          <div className="input-container">
-            <label>Peso por defecto (lbs)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              className="input-field"
-              value={weight}
-              onChange={(e) => setWeight(e.target.value)}
-              placeholder="opcional"
-            />
-          </div>
-          <div className="input-container">
-            <label>Valor por defecto ($)</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              className="input-field"
-              value={purchaseValue}
-              onChange={(e) => setPurchaseValue(e.target.value)}
-              placeholder="opcional"
-            />
-          </div>
+        <div className="input-container">
+          <label>Valor por defecto ($)</label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            className="input-field"
+            value={purchaseValue}
+            onChange={(e) => setPurchaseValue(e.target.value)}
+            placeholder="opcional"
+          />
         </div>
 
         <div className="input-container">
