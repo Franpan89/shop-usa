@@ -100,7 +100,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
           <div className="glass-panel" style={{ padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ margin: 0, fontSize: '1.5rem' }}>Cargos y Créditos</h2>
-              <NewAdjustmentModal clientId={id} />
+              <NewAdjustmentModal clientId={id} serviceFeePercent={client.serviceFeePercent} />
             </div>
 
             <div className="table-container">

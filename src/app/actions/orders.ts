@@ -49,9 +49,11 @@ export async function createOrder(clientId: string, products: any[]) {
   });
 
   const taxAmount = parseFloat((taxableAmount * TAX_RATE).toFixed(2));
-  const baseWithTax = baseAmount + taxAmount;
-  const serviceFeeAmount = parseFloat((baseWithTax * feePercent / 100).toFixed(2));
-  const totalAmount = parseFloat((baseWithTax + serviceFeeAmount).toFixed(2));
+  // Service fee is 20% (or the client's rate) of the SHOPUSA purchase value + its
+  // tax only — shipping cost never attracts the fee, whether the item was
+  // purchased by the client or by ShopUSA.
+  const serviceFeeAmount = parseFloat(((taxableAmount + taxAmount) * feePercent / 100).toFixed(2));
+  const totalAmount = parseFloat((baseAmount + taxAmount + serviceFeeAmount).toFixed(2));
   const balance = parseFloat((totalAmount - totalPrepaid).toFixed(2));
 
   const order = await prisma.order.create({

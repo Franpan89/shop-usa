@@ -139,13 +139,15 @@ export default function NewOrderModal({ clients, catalog = [], initialClientId }
     const purchase = p.purchasedBy === 'SHOPUSA' ? (parseFloat(p.purchaseValue) || 0) : 0;
     return sum + shipping + purchase;
   }, 0);
-  const taxAmount = products.reduce((sum, p) => {
+  const shopusaPurchaseSubtotal = products.reduce((sum, p) => {
     if (p.purchasedBy !== 'SHOPUSA') return sum;
-    return sum + (parseFloat(p.purchaseValue) || 0) * TAX_RATE;
+    return sum + (parseFloat(p.purchaseValue) || 0);
   }, 0);
-  const baseWithTax = baseAmount + taxAmount;
-  const serviceFee = baseWithTax * feePercent / 100;
-  const totalAmount = baseWithTax + serviceFee;
+  const taxAmount = shopusaPurchaseSubtotal * TAX_RATE;
+  // Service fee is a % of the SHOPUSA purchase value + its tax only — shipping
+  // never attracts the fee, matching actions/orders.ts.
+  const serviceFee = (shopusaPurchaseSubtotal + taxAmount) * feePercent / 100;
+  const totalAmount = baseAmount + taxAmount + serviceFee;
   const totalPrepaid = products.reduce((sum, p) => sum + (parseFloat(p.prepaidAmount) || 0), 0);
   const balance = totalAmount - totalPrepaid;
   const hasShopusaItems = products.some(p => p.purchasedBy === 'SHOPUSA');
