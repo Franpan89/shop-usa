@@ -207,7 +207,7 @@ export async function updateOrderShipment(orderId: string, weight: number, shipp
 
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    select: { totalAmount: true, balance: true, clientId: true, boxId: true },
+    select: { totalAmount: true, balance: true, clientId: true },
   });
   if (!order) throw new Error('Order not found');
 
@@ -219,7 +219,6 @@ export async function updateOrderShipment(orderId: string, weight: number, shipp
   });
 
   await recalcOrderTotals(orderId, paidSoFar);
-  if (order.boxId) await recomputeBoxWeight(order.boxId);
 
   revalidatePath('/pedidos');
   revalidatePath(`/pedidos/${orderId}`);
@@ -232,7 +231,7 @@ export async function deleteOrder(orderId: string) {
 
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    select: { clientId: true, boxId: true },
+    select: { clientId: true },
   });
   if (!order) throw new Error('Order not found');
 
@@ -241,8 +240,6 @@ export async function deleteOrder(orderId: string) {
     prisma.order.delete({ where: { id: orderId } }),
   ]);
 
-  if (order.boxId) await recomputeBoxWeight(order.boxId);
-
   revalidatePath('/pedidos');
   revalidatePath('/cajas');
   revalidatePath('/');
@@ -250,39 +247,54 @@ export async function deleteOrder(orderId: string) {
   return { success: true };
 }
 
-export async function assignOrderToBox(orderId: string, boxId: string | null) {
-  if (!orderId) throw new Error('Order id required');
+/**
+ * Assigns (or clears) the box a single product physically travels in. Products
+ * of the same order can go in different boxes — an order is only ever
+ * auto-marked SHIPPED once every one of its products shares the same box; if
+ * it later spans more than one box (or loses its box), it's reverted to
+ * READY_TO_SHIP so staff can manage the split manually from there.
+ */
+export async function assignProductToBox(productId: string, boxId: string | null) {
+  if (!productId) throw new Error('Product id required');
 
-  const current = await prisma.order.findUnique({
-    where: { id: orderId },
-    select: { boxId: true, clientId: true, status: true },
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    select: { orderId: true },
   });
-  if (!current) throw new Error('Order not found');
+  if (!product) throw new Error('Product not found');
 
-  // Only nudge status when it makes sense — don't clobber loose-ship workflows.
-  // Assigning a box to a READY_TO_SHIP order implies it's being shipped now.
-  // Removing a box from a SHIPPED order reverts to READY_TO_SHIP.
-  // All other cases (DELIVERED, ARRIVED, loose SHIPPED) leave status alone.
-  const normalized = normalizeOrderStatus(current.status);
+  await prisma.product.update({
+    where: { id: productId },
+    data: { boxId },
+  });
+
+  const order = await prisma.order.findUnique({
+    where: { id: product.orderId },
+    select: { id: true, boxId: true, clientId: true, status: true, products: { select: { boxId: true } } },
+  });
+  if (!order) throw new Error('Order not found');
+
+  const boxIds = order.products.map((p) => p.boxId);
+  const derivedBoxId = boxIds.length > 0 && boxIds[0] && boxIds.every((id) => id === boxIds[0])
+    ? boxIds[0]
+    : null;
+
+  const normalized = normalizeOrderStatus(order.status);
   let nextStatus: OrderStatus | undefined;
-  if (boxId && normalized === 'READY_TO_SHIP') nextStatus = 'SHIPPED';
-  else if (!boxId && normalized === 'SHIPPED' && current.boxId) nextStatus = 'READY_TO_SHIP';
+  if (derivedBoxId && normalized === 'READY_TO_SHIP') nextStatus = 'SHIPPED';
+  else if (!derivedBoxId && normalized === 'SHIPPED' && order.boxId) nextStatus = 'READY_TO_SHIP';
 
-  const updated = await prisma.order.update({
-    where: { id: orderId },
-    data: { boxId, ...(nextStatus ? { status: nextStatus } : {}) },
+  await prisma.order.update({
+    where: { id: order.id },
+    data: { boxId: derivedBoxId, ...(nextStatus ? { status: nextStatus } : {}) },
   });
 
-  const boxesToRecompute = new Set<string>();
-  if (current.boxId) boxesToRecompute.add(current.boxId);
-  if (boxId) boxesToRecompute.add(boxId);
-  for (const id of boxesToRecompute) await recomputeBoxWeight(id);
-
-  if (nextStatus === 'SHIPPED') await notifyOrderShipped(orderId);
+  if (nextStatus === 'SHIPPED') await notifyOrderShipped(order.id);
 
   revalidatePath('/pedidos');
+  revalidatePath(`/pedidos/${order.id}`);
   revalidatePath('/cajas');
-  revalidatePath(`/clientes/${updated.clientId}`);
+  revalidatePath(`/clientes/${order.clientId}`);
   return { success: true };
 }
 
@@ -397,16 +409,5 @@ async function notifyOrderShipped(orderId: string) {
     products: order.products.map((p) => ({ name: p.name })),
     weight: order.weight,
     boxLabel: order.box?.internalId,
-  });
-}
-
-async function recomputeBoxWeight(boxId: string) {
-  const result = await prisma.order.aggregate({
-    where: { boxId },
-    _sum: { weight: true },
-  });
-  await prisma.box.update({
-    where: { id: boxId },
-    data: { totalWeight: parseFloat((result._sum.weight ?? 0).toFixed(2)) },
   });
 }

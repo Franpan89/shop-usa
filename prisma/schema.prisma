@@ -100,6 +100,8 @@ model Product {
   id            String      @id @default(cuid())
   orderId       String
   order         Order       @relation(fields: [orderId], references: [id])
+  boxId         String?
+  box           Box?        @relation(fields: [boxId], references: [id])
   name          String
   purchasedBy   PurchasedBy @default(CLIENT)
   purchaseValue Float?
@@ -128,8 +130,9 @@ model Box {
   status      BoxStatus @default(IN_TRANSIT)
   country     String
   totalWeight Float
-  
+
   orders      Order[]
+  products    Product[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

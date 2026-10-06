@@ -14,6 +14,10 @@ export async function createClient(formData: FormData) {
   const notes = formData.get('notes') as string;
   const deliveryMethod = formData.get('deliveryMethod') as any;
   const deliveryAddress = formData.get('deliveryAddress') as string;
+  const emailRaw = (formData.get('email') as string)?.trim();
+  const email = emailRaw ? emailRaw : null;
+  const shippingCategoryRaw = formData.get('shippingCategoryId') as string;
+  const shippingCategoryId = shippingCategoryRaw && shippingCategoryRaw.trim() !== '' ? shippingCategoryRaw : null;
 
   const birthday = birthdayStr ? new Date(birthdayStr) : null;
 
@@ -36,11 +40,13 @@ export async function createClient(formData: FormData) {
       country,
       city,
       phone,
+      email,
       birthday,
       notes,
       deliveryMethod,
       deliveryAddress,
       serviceFeePercent: isNaN(serviceFeePercent) ? 20 : serviceFeePercent,
+      shippingCategoryId,
     },
   });
 

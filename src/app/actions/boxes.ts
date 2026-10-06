@@ -20,6 +20,13 @@ export async function createBox(input: {
   const tenant = await prisma.tenant.findFirst();
   if (!tenant) throw new Error('No tenant found');
 
+  const existing = await prisma.box.findFirst({
+    where: { tenantId: tenant.id, internalId: { equals: internalId, mode: 'insensitive' } },
+  });
+  if (existing) {
+    throw new Error(`Ya existe una caja con el ID interno "${internalId}".`);
+  }
+
   const box = await prisma.box.create({
     data: {
       tenantId: tenant.id,
@@ -39,14 +46,28 @@ export async function createBox(input: {
 export async function deleteBox(boxId: string) {
   if (!boxId) throw new Error('Box id required');
 
-  const orderCount = await prisma.order.count({ where: { boxId } });
-  if (orderCount > 0) {
-    throw new Error(`No se puede eliminar: la caja tiene ${orderCount} pedido(s) asignado(s).`);
+  const productCount = await prisma.product.count({ where: { boxId } });
+  if (productCount > 0) {
+    throw new Error(`No se puede eliminar: la caja tiene ${productCount} producto(s) asignado(s).`);
   }
 
   await prisma.box.delete({ where: { id: boxId } });
 
   revalidatePath('/cajas');
+  return { success: true };
+}
+
+export async function updateBoxWeight(boxId: string, totalWeight: number) {
+  if (!boxId) throw new Error('Box id required');
+  if (!Number.isFinite(totalWeight) || totalWeight < 0) throw new Error('Peso inválido');
+
+  await prisma.box.update({
+    where: { id: boxId },
+    data: { totalWeight },
+  });
+
+  revalidatePath('/cajas');
+  revalidatePath(`/cajas/${boxId}`);
   return { success: true };
 }
 

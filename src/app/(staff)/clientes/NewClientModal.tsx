@@ -4,7 +4,18 @@ import { useState } from 'react';
 import Modal from '@/components/Modal';
 import { createClient } from '../../actions/clients';
 
-export default function NewClientModal() {
+interface ShippingCategory {
+  id: string;
+  name: string;
+  rate: number;
+  unit: 'HALF_LB' | 'LB';
+}
+
+interface NewClientModalProps {
+  categories: ShippingCategory[];
+}
+
+export default function NewClientModal({ categories }: NewClientModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +89,21 @@ export default function NewClientModal() {
             <div className="input-container">
               <label>Teléfono</label>
               <input name="phone" type="text" className="input-field" placeholder="+593 ..." />
+            </div>
+            <div className="input-container">
+              <label>Correo Electrónico</label>
+              <input name="email" type="email" className="input-field" placeholder="cliente@correo.com" />
+            </div>
+            <div className="input-container">
+              <label>Categoría de Envío</label>
+              <select name="shippingCategoryId" className="input-field" defaultValue="">
+                <option value="">-- Sin categoría --</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name} — ${cat.rate.toFixed(2)}/{cat.unit === 'LB' ? 'lb' : '0.5lb'}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="input-container">
               <label>Preferencia de Entrega</label>

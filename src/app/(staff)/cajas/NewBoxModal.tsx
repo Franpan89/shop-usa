@@ -79,7 +79,7 @@ export default function NewBoxModal() {
           </div>
 
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            La caja se crea en estado <strong>En Tránsito</strong>. El peso se calculará automáticamente al asignar pedidos.
+            La caja se crea en estado <strong>En Tránsito</strong>. El peso se ingresa manualmente desde el detalle de la caja.
           </p>
 
           <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>

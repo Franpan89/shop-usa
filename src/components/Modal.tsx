@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface ModalProps {
   isOpen: boolean;
@@ -18,9 +19,16 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
-  if (!isOpen) return null;
+  // isOpen only ever flips to true from a client-side event handler (never
+  // during the initial server render), so document is always available here.
+  // Several call sites nest the trigger (and so this component) inside a
+  // .glass-panel, which sets backdrop-filter — that creates a new containing
+  // block for fixed-position descendants, trapping the overlay inside the
+  // panel instead of covering the viewport. Render straight into <body> so
+  // the overlay is never subject to an ancestor's CSS.
+  if (!isOpen || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div className="glass-panel modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
@@ -100,6 +108,7 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
           to { transform: translateY(0); opacity: 1; }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 }

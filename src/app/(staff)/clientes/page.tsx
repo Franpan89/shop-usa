@@ -2,30 +2,43 @@ import prisma from '@/lib/prisma';
 import NewClientModal from './NewClientModal';
 import Link from 'next/link';
 import SearchFilter from '@/components/SearchFilter';
+import SelectFilter from '@/components/SelectFilter';
 
 interface ClientesPageProps {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; estado?: string; pais?: string }>;
 }
 
 export default async function ClientesPage({ searchParams }: ClientesPageProps) {
-  const { q } = await searchParams;
-  
+  const { q, estado, pais } = await searchParams;
+
   // Get the first tenant for now
   const tenant = await prisma.tenant.findFirst();
-  
-  const clients = tenant ? await prisma.client.findMany({
-    where: { 
+
+  const allClients = tenant ? await prisma.client.findMany({
+    where: {
       tenantId: tenant.id,
       OR: q ? [
         { name: { contains: q, mode: 'insensitive' } },
         { code: { contains: q, mode: 'insensitive' } },
         { idNumber: { contains: q, mode: 'insensitive' } },
-      ] : undefined
+      ] : undefined,
+      country: pais || undefined,
     },
     include: {
       orders: true,
     },
     orderBy: { createdAt: 'desc' }
+  }) : [];
+
+  const clients = allClients.filter((client) => {
+    if (!estado) return true;
+    const totalBalance = client.orders.reduce((sum, o) => sum + o.balance, 0);
+    return estado === 'CON_DEUDA' ? totalBalance > 0 : totalBalance <= 0;
+  });
+
+  const shippingCategories = tenant ? await prisma.shippingCategory.findMany({
+    where: { tenantId: tenant.id },
+    orderBy: [{ country: 'asc' }, { name: 'asc' }],
   }) : [];
 
   return (
@@ -36,43 +49,39 @@ export default async function ClientesPage({ searchParams }: ClientesPageProps) 
           <p className="page-subtitle">Lista de todos los clientes incluyendo su información de contacto y resumen de pedidos.</p>
         </div>
         <div style={{ display: 'flex', gap: '16px' }}>
-          <NewClientModal />
+          <NewClientModal categories={shippingCategories} />
         </div>
       </header>
 
       <div className="filter-bar">
         <SearchFilter placeholder="Nombre, código o ID..." />
-        <div className="input-container">
-          <label>Estado de Pedidos</label>
-          <select className="input-field">
-            <option>Todos</option>
-            <option>Al Día</option>
-            <option>Con Deuda</option>
-          </select>
-        </div>
-        <div className="input-container">
-          <label>País</label>
-          <select className="input-field">
-            <option>Todos los Países</option>
-            <option>Ecuador</option>
-            <option>Panamá</option>
-          </select>
-        </div>
-        <div style={{ marginTop: 'auto' }}>
-          <button className="btn" style={{ height: '42px', padding: '0 24px' }}>
-            🔍 Buscar
-          </button>
-        </div>
+        <SelectFilter
+          label="Estado de Pedidos"
+          paramName="estado"
+          options={[
+            { value: 'AL_DIA', label: 'Al Día' },
+            { value: 'CON_DEUDA', label: 'Con Deuda' },
+          ]}
+        />
+        <SelectFilter
+          label="País"
+          paramName="pais"
+          allLabel="Todos los Países"
+          options={[
+            { value: 'Ecuador', label: 'Ecuador' },
+            { value: 'Panamá', label: 'Panamá' },
+          ]}
+        />
       </div>
 
       <div className="glass-panel" style={{ padding: '16px 24px', marginBottom: '24px', borderLeft: '4px solid var(--accent-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <span style={{ fontSize: '1.2rem', marginRight: '8px' }}>ℹ️</span>
           <span style={{ color: 'var(--text-muted)' }}>
-            Mostrando todos los clientes registrados. <strong>{clients.length} cliente(s) encontrado(s).</strong>
+            {(q || estado || pais) ? 'Mostrando clientes filtrados.' : 'Mostrando todos los clientes registrados.'} <strong>{clients.length} cliente(s) encontrado(s).</strong>
           </span>
         </div>
-        {q && (
+        {(q || estado || pais) && (
           <Link href="/clientes" style={{ fontSize: '0.9rem', color: 'var(--accent-color)', fontWeight: 600 }}>
             ✕ Limpiar Búsqueda
           </Link>

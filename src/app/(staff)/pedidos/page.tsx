@@ -77,11 +77,6 @@ export default async function PedidosPage({ searchParams }: Props) {
     ? allOrders
     : allOrders.filter(o => normalizeOrderStatus(o.status) === activeStatus);
 
-  const availableBoxes = tenant ? await prisma.box.findMany({
-    where: { tenantId: tenant.id, status: 'IN_TRANSIT' },
-    select: { id: true, internalId: true, status: true },
-    orderBy: { createdAt: 'desc' },
-  }) : [];
 
   const tabs: Array<{ key: OrderStatus | 'ALL'; label: string; icon?: string }> = [
     { key: 'ALL', label: 'Todos' },
@@ -239,11 +234,20 @@ export default async function PedidosPage({ searchParams }: Props) {
                   {order.weight.toFixed(2)} lbs
                 </td>
                 <td>
-                  {order.box ? (
-                    <span style={{ color: 'var(--accent-color)', fontWeight: 600 }}>📦 {order.box.internalId}</span>
-                  ) : (
-                    <span style={{ color: 'var(--text-muted)' }}>Sin caja</span>
-                  )}
+                  {(() => {
+                    const boxedCount = order.products.filter((p) => p.boxId).length;
+                    if (order.box) {
+                      return <span style={{ color: 'var(--accent-color)', fontWeight: 600 }}>📦 {order.box.internalId}</span>;
+                    }
+                    if (boxedCount > 0) {
+                      return (
+                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>
+                          📦 Parcial ({boxedCount}/{order.products.length})
+                        </span>
+                      );
+                    }
+                    return <span style={{ color: 'var(--text-muted)' }}>Sin caja</span>;
+                  })()}
                 </td>
                 <td>
                   <strong>${order.totalAmount.toFixed(2)}</strong><br/>
@@ -255,9 +259,9 @@ export default async function PedidosPage({ searchParams }: Props) {
                   <OrderActionsCell
                     orderId={order.id}
                     currentBoxId={order.boxId}
+                    hasBoxedProduct={order.products.some((p) => p.boxId)}
                     currentStatus={order.status}
                     balance={order.balance}
-                    boxes={availableBoxes}
                   />
                 </td>
               </tr>

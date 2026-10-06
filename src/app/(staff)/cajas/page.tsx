@@ -9,18 +9,29 @@ export const dynamic = 'force-dynamic';
 export default async function CajasPage() {
   const tenant = await prisma.tenant.findFirst();
 
-  const boxes = tenant ? await prisma.box.findMany({
+  const rawBoxes = tenant ? await prisma.box.findMany({
     where: { tenantId: tenant.id },
     include: {
-      orders: {
+      products: {
         include: {
-          client: true,
-          products: true,
+          order: { include: { client: true } },
         },
       },
     },
     orderBy: { createdAt: 'desc' },
   }) : [];
+
+  // A box's real contents are its products (an order can be split across
+  // boxes), so orders are derived from the products physically in this box.
+  const boxes = rawBoxes.map((box) => {
+    type BoxOrder = typeof box.products[number]['order'] & { products: typeof box.products };
+    const ordersById = new Map<string, BoxOrder>();
+    for (const p of box.products) {
+      if (!ordersById.has(p.orderId)) ordersById.set(p.orderId, { ...p.order, products: [] });
+      ordersById.get(p.orderId)!.products.push(p);
+    }
+    return { ...box, orders: Array.from(ordersById.values()) };
+  });
 
   const totalCajas = boxes.length;
   const inTransit = boxes.filter(b => b.status === 'IN_TRANSIT' && !b.orders.some(o => normalizeOrderStatus(o.status) === 'ARRIVED')).length;

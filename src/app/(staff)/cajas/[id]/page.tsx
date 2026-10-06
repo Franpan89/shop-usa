@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import BoxStatusActions from '../BoxStatusActions';
 import OrderReceivingControl from '../OrderReceivingControl';
 import NotifyClientsButton from '../NotifyClientsButton';
+import EditBoxWeightButton from './EditBoxWeightButton';
 import { normalizeOrderStatus, statusBadgeClass, statusLabel } from '@/lib/orderStatus';
 
 interface Props {
@@ -16,35 +17,45 @@ export default async function BoxDetailPage({ params }: Props) {
   const box = await prisma.box.findUnique({
     where: { id },
     include: {
-      orders: {
+      products: {
         include: {
-          client: true,
-          products: true,
+          order: { include: { client: true } },
         },
-        orderBy: { orderDate: 'asc' },
       },
     },
   });
 
   if (!box) notFound();
 
-  // Group orders by client
-  const ordersByClient = new Map<string, { client: typeof box.orders[number]['client']; orders: typeof box.orders }>();
-  for (const o of box.orders) {
+  // A box's real contents are its products (an order can be split across
+  // boxes), so orders are derived from the products physically in this box —
+  // not from Order.boxId, which only reflects orders fully packed in one box.
+  type BoxOrder = typeof box.products[number]['order'] & { products: typeof box.products };
+  const ordersById = new Map<string, BoxOrder>();
+  for (const p of box.products) {
+    if (!ordersById.has(p.orderId)) {
+      ordersById.set(p.orderId, { ...p.order, products: [] });
+    }
+    ordersById.get(p.orderId)!.products.push(p);
+  }
+  const boxOrders = Array.from(ordersById.values());
+
+  const ordersByClient = new Map<string, { client: BoxOrder['client']; orders: BoxOrder[] }>();
+  for (const o of boxOrders) {
     if (!ordersByClient.has(o.clientId)) {
       ordersByClient.set(o.clientId, { client: o.client, orders: [] });
     }
     ordersByClient.get(o.clientId)!.orders.push(o);
   }
 
-  const totalProducts = box.orders.reduce((s, o) => s + o.products.length, 0);
-  const totalValue = box.orders.reduce((s, o) => s + o.totalAmount, 0);
-  const totalBalance = box.orders.reduce((s, o) => s + o.balance, 0);
-  const allDelivered = box.orders.length > 0 && box.orders.every(o => normalizeOrderStatus(o.status) === 'DELIVERED');
-  const anyArrived = box.orders.some(o => normalizeOrderStatus(o.status) === 'ARRIVED');
+  const totalProducts = box.products.length;
+  const totalValue = boxOrders.reduce((s, o) => s + o.totalAmount, 0);
+  const totalBalance = boxOrders.reduce((s, o) => s + o.balance, 0);
+  const allDelivered = boxOrders.length > 0 && boxOrders.every(o => normalizeOrderStatus(o.status) === 'DELIVERED');
+  const anyArrived = boxOrders.some(o => normalizeOrderStatus(o.status) === 'ARRIVED');
 
-  const receivedOkCount = box.orders.filter(o => o.receivedStatus === 'OK').length;
-  const novedadCount = box.orders.filter(o => o.receivedStatus === 'NOVEDAD').length;
+  const receivedOkCount = boxOrders.filter(o => o.receivedStatus === 'OK').length;
+  const novedadCount = boxOrders.filter(o => o.receivedStatus === 'NOVEDAD').length;
   const reviewedCount = receivedOkCount + novedadCount;
 
   const boxStatusLabel = box.status === 'DELIVERED' ? 'Entregada' : anyArrived ? 'Llegó al país' : 'En Tránsito';
@@ -72,7 +83,7 @@ export default async function BoxDetailPage({ params }: Props) {
       <div className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', marginBottom: '24px' }}>
         <div className="glass-panel stat-card" style={{ padding: '20px' }}>
           <div className="stat-title">Pedidos</div>
-          <div className="stat-value" style={{ fontSize: '1.8rem' }}>{box.orders.length}</div>
+          <div className="stat-value" style={{ fontSize: '1.8rem' }}>{boxOrders.length}</div>
         </div>
         <div className="glass-panel stat-card" style={{ padding: '20px' }}>
           <div className="stat-title">Clientes</div>
@@ -83,7 +94,10 @@ export default async function BoxDetailPage({ params }: Props) {
           <div className="stat-value" style={{ fontSize: '1.8rem' }}>{totalProducts}</div>
         </div>
         <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Peso Total</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="stat-title">Peso Total</div>
+            <EditBoxWeightButton boxId={box.id} totalWeight={box.totalWeight ?? 0} />
+          </div>
           <div className="stat-value" style={{ fontSize: '1.8rem' }}>{(box.totalWeight ?? 0).toFixed(2)} lbs</div>
         </div>
         <div className="glass-panel stat-card" style={{ padding: '20px' }}>
@@ -106,15 +120,15 @@ export default async function BoxDetailPage({ params }: Props) {
           <BoxStatusActions
             boxId={box.id}
             boxStatus={box.status}
-            hasOrders={box.orders.length > 0}
+            hasOrders={boxOrders.length > 0}
             allDelivered={allDelivered}
             anyArrived={anyArrived}
           />
           {anyArrived && <NotifyClientsButton boxId={box.id} />}
         </div>
-        {anyArrived && box.orders.length > 0 && (
+        {anyArrived && boxOrders.length > 0 && (
           <div style={{ marginTop: '12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            📥 Recepción: {reviewedCount}/{box.orders.length} confirmados
+            📥 Recepción: {reviewedCount}/{boxOrders.length} confirmados
             {novedadCount > 0 && (
               <span style={{ color: '#ef4444', fontWeight: 600, marginLeft: '8px' }}>
                 ⚠️ {novedadCount} pedido(s) con novedad sin resolver

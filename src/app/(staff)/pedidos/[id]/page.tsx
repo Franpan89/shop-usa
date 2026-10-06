@@ -6,6 +6,7 @@ import OrderStatusChanger from './OrderStatusChanger';
 import RegisterPaymentButton from './RegisterPaymentButton';
 import ProductFormModal from './ProductFormModal';
 import EditShipmentModal from './EditShipmentModal';
+import ProductBoxSelect from './ProductBoxSelect';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -30,12 +31,23 @@ export default async function OrderDetailPage({ params }: Props) {
     select: { name: true, defaultPurchaseValue: true, defaultPurchasedBy: true },
     orderBy: [{ timesShipped: 'desc' }, { name: 'asc' }],
   });
+  const boxes = await prisma.box.findMany({
+    where: { tenantId: order.tenantId },
+    select: { id: true, internalId: true, status: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  const boxesById = new Map(boxes.map((b) => [b.id, b]));
+
   const shippingRate = order.client.shippingCategory?.rate ?? 0;
   const shippingUnit = order.client.shippingCategory?.unit ?? 'HALF_LB';
 
   const amountPaid = order.totalAmount - order.balance;
   const ref = `#${order.id.slice(-6).toUpperCase()}`;
   const baseAmount = order.totalAmount - order.taxAmount - order.serviceFeeAmount;
+
+  const distinctProductBoxIds = Array.from(new Set(order.products.map((p) => p.boxId).filter((id): id is string => !!id)));
+  const isFullyBoxed = order.products.length > 0 && distinctProductBoxIds.length === 1
+    && order.products.every((p) => p.boxId === distinctProductBoxIds[0]);
 
   return (
     <>
@@ -139,8 +151,12 @@ export default async function OrderDetailPage({ params }: Props) {
         </div>
         <div className="glass-panel stat-card" style={{ padding: '20px' }}>
           <div className="stat-title">Caja Asignada</div>
-          <div className="stat-value" style={{ fontSize: '1.1rem', color: order.box ? 'var(--accent-color)' : 'var(--text-muted)' }}>
-            {order.box ? `📦 ${order.box.internalId}` : 'Sin caja'}
+          <div className="stat-value" style={{ fontSize: '1.1rem', color: distinctProductBoxIds.length > 0 ? 'var(--accent-color)' : 'var(--text-muted)' }}>
+            {isFullyBoxed
+              ? `📦 ${boxesById.get(distinctProductBoxIds[0])?.internalId ?? ''}`
+              : distinctProductBoxIds.length > 0
+                ? `📦 Dividido en ${distinctProductBoxIds.length} cajas`
+                : 'Sin caja'}
           </div>
         </div>
       </div>
@@ -161,6 +177,7 @@ export default async function OrderDetailPage({ params }: Props) {
                 <th style={{ textAlign: 'right' }}>VALOR COMPRA</th>
                 <th style={{ textAlign: 'right' }}>PREPAGO</th>
                 <th style={{ textAlign: 'right' }}>SUBTOTAL</th>
+                <th>CAJA</th>
                 <th>ACCIONES</th>
               </tr>
             </thead>
@@ -186,6 +203,9 @@ export default async function OrderDetailPage({ params }: Props) {
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: 700 }}>${subtotal.toFixed(2)}</td>
                     <td>
+                      <ProductBoxSelect productId={p.id} currentBoxId={p.boxId} boxes={boxes} />
+                    </td>
+                    <td>
                       <ProductFormModal orderId={order.id} catalog={catalog} product={p} />
                     </td>
                   </tr>
@@ -193,7 +213,7 @@ export default async function OrderDetailPage({ params }: Props) {
               })}
               {order.products.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
                     Sin productos registrados.
                   </td>
                 </tr>
@@ -209,6 +229,7 @@ export default async function OrderDetailPage({ params }: Props) {
                   <td style={{ textAlign: 'right', fontWeight: 800, fontSize: '1.05rem', padding: '14px 16px' }}>
                     ${order.totalAmount.toFixed(2)}
                   </td>
+                  <td />
                   <td />
                 </tr>
               </tfoot>
