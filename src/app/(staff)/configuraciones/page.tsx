@@ -4,9 +4,8 @@ import { getCountryRules, getSettings, getTenantId } from '@/lib/tenant';
 import { billableWeight, shippingCost } from '@/lib/domain/pricing';
 import { Alert, PageHeader, Panel, Tabs, ToneBadge, money } from '@/components/ui/kit';
 import ActionForm from '@/components/ui/ActionForm';
-import ActionButton from '@/components/ui/ActionButton';
+import { DeleteCategoryButton, DeleteCountryButton, ToggleCategoryButton } from './ConfigActions';
 import {
-  deleteCountryRule,
   savePaymentInstructions,
   saveCountryRule,
   saveCustody,
@@ -15,7 +14,7 @@ import {
   saveRetention,
   setNextClientNumber,
 } from '@/app/actions/settings';
-import { createShippingCategory, deleteShippingCategory, setShippingCategoryActive, updateShippingCategory } from '@/app/actions/shipping';
+import { createShippingCategory, updateShippingCategory } from '@/app/actions/shipping';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,7 +68,7 @@ export default async function ConfiguracionesPage({ searchParams }: { searchPara
                 actions={
                   <>
                     <ToneBadge tone={c.active ? 'success' : 'secondary'}>{c.active ? 'Activa' : 'Inactiva'}</ToneBadge>
-                    <ActionButton className="btn btn-ghost btn-sm" success={c.active ? 'Tarifa desactivada' : 'Tarifa activada'} action={() => setShippingCategoryActive(c.id, !c.active)}>{c.active ? 'Desactivar' : 'Activar'}</ActionButton>
+                    <ToggleCategoryButton id={c.id} active={c.active} />
                   </>
                 }
               >
@@ -99,7 +98,7 @@ export default async function ConfiguracionesPage({ searchParams }: { searchPara
                 </ActionForm>
                 {c._count.clients === 0 && (
                   <div style={{ marginTop: 10 }}>
-                    <ActionButton className="btn btn-ghost btn-sm" confirm="¿Eliminar esta tarifa?" success="Tarifa eliminada" action={() => deleteShippingCategory(c.id)}>Eliminar</ActionButton>
+                    <DeleteCategoryButton id={c.id} />
                   </div>
                 )}
               </Panel>
@@ -152,7 +151,7 @@ export default async function ConfiguracionesPage({ searchParams }: { searchPara
                 </div>
                 <div className="row">
                   <button type="submit" className="btn btn-sm">Guardar</button>
-                  <ActionButton className="btn btn-ghost btn-sm" confirm={`¿Eliminar ${r.name}?`} success="País eliminado" action={() => deleteCountryRule(r.id)}>Eliminar</ActionButton>
+                  <DeleteCountryButton id={r.id} name={r.name} />
                 </div>
               </ActionForm>
             </Panel>

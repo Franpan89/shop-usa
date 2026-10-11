@@ -90,7 +90,7 @@ export default async function DashboardPage() {
     <>
       <section className="hero-wash">
         <span className="eyebrow">Resumen operativo</span>
-        <h1 className="display">Hola, {user.name.split(' ')[0]}</h1>
+        <h1 className="display">Hola, {user.name}</h1>
         <p className="lead">Lo que está esperando acción en cada paso del recorrido de la mercancía.</p>
       </section>
 

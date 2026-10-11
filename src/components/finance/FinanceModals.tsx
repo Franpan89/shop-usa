@@ -53,7 +53,11 @@ export function RegisterPaymentModal({
 }) {
   const [open, setOpen] = useState(false);
   const [client, setClient] = useState(clientId ?? '');
-  const [amount, setAmount] = useState('');
+  // Con una factura preseleccionada se propone su saldo pendiente.
+  const [amount, setAmount] = useState(() => {
+    const inv = invoices.find((i) => i.id === defaultTargetId);
+    return inv ? inv.balance.toFixed(2) : '';
+  });
   const [method, setMethod] = useState<'TRANSFER' | 'CASH' | 'CARD' | 'ONLINE' | 'OTHER'>('TRANSFER');
   const [paidAt, setPaidAt] = useState(today());
   const [reference, setReference] = useState('');
