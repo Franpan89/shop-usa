@@ -85,10 +85,11 @@ body {
 
 .sidebar {
   width: 280px;
-  padding: 32px 24px;
+  flex: none;
+  padding: 28px 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 16px;
 }
 
 .logo-container {
@@ -123,14 +124,19 @@ body {
 .nav-menu {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 3px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-right: -8px;
+  padding-right: 8px;
 }
 
 .nav-link {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 9px 14px;
   border-radius: var(--border-radius-md);
   color: var(--text-muted);
   text-decoration: none;

@@ -1,177 +1,123 @@
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
-import { statusLabel, statusBadgeClass } from '@/lib/orderStatus';
+import { requireStaff } from '@/lib/auth';
+import { getSettings, getTenantId } from '@/lib/tenant';
+import { retentionDays, retentionLevel } from '@/lib/domain/flow';
+import { Kpi, KpiGrid, PageHeader, Panel, ToneBadge, longDateTime, money } from '@/components/ui/kit';
+
+import { nowMs } from '@/lib/clock';
 
 export const dynamic = 'force-dynamic';
 
-export default async function DashboardPage() {
-  // Get the first tenant for now
-  const tenant = await prisma.tenant.findFirst();
-  
-  if (!tenant) {
-    return <div>No tenant found. Please run the seed script.</div>;
-  }
+interface Step {
+  href: string;
+  icon: string;
+  label: string;
+  count: number;
+  hint: string;
+  tone?: 'warning' | 'danger' | 'success' | 'accent';
+}
 
-  // Fetch summary stats
-  const [
-    pedidosCount,
-    cajasTransitCount,
-    cajasDeliveredCount,
-    ingresosSum,
-    gastosSum,
-    recentOrders
-  ] = await Promise.all([
-    prisma.order.count({ where: { tenantId: tenant.id } }),
-    prisma.box.count({ where: { tenantId: tenant.id, status: 'IN_TRANSIT' } }),
-    prisma.box.count({ where: { tenantId: tenant.id, status: 'DELIVERED' } }),
-    prisma.order.aggregate({
-      _sum: { totalAmount: true },
-      where: { tenantId: tenant.id }
-    }),
-    prisma.expense.aggregate({
-      _sum: { originalAmount: true },
-      where: { tenantId: tenant.id }
-    }),
-    prisma.order.findMany({
-      where: { tenantId: tenant.id },
-      take: 5,
-      orderBy: { orderDate: 'desc' },
-      include: { 
-        client: true,
-        products: true,
-      }
-    })
+/** El tablero sigue el recorrido de la mercancía: cada paso muestra cuánto está esperando acción. */
+export default async function DashboardPage() {
+  const user = await requireStaff();
+  const tenantId = await getTenantId();
+  const settings = await getSettings();
+
+  const [pendingPay, toVerify, ready, toReceive, openCons, held, pool, pkgsPrep, draftDispatch, transit, pickup, custody, invoices, payments] = await Promise.all([
+    prisma.order.count({ where: { tenantId, status: 'PENDING_PAYMENT' } }),
+    prisma.payment.count({ where: { tenantId, status: 'PENDING_VERIFICATION' } }),
+    prisma.product.count({ where: { tenantId, status: 'READY_TO_BUY' } }),
+    prisma.product.count({ where: { tenantId, status: 'PURCHASED' } }),
+    prisma.consolidation.count({ where: { tenantId, status: 'OPEN', decision: 'DISPATCH', products: { some: { status: 'RECEIVED' } } } }),
+    prisma.consolidation.findMany({ where: { tenantId, status: 'OPEN', decision: 'HOLD' }, select: { retentionStartedAt: true } }),
+    prisma.product.count({ where: { tenantId, status: 'RECEIVED', pkgId: null, consolidation: { status: 'CLOSED' } } }),
+    prisma.pkg.count({ where: { tenantId, status: 'IN_PREPARATION' } }),
+    prisma.dispatch.count({ where: { tenantId, status: 'DRAFT' } }),
+    prisma.pkg.count({ where: { tenantId, status: { in: ['IN_TRANSIT', 'AT_DESTINATION'] } } }),
+    prisma.product.count({ where: { tenantId, status: 'READY_FOR_PICKUP' } }),
+    prisma.custodyPackage.count({ where: { tenantId, status: 'IN_CUSTODY' } }),
+    prisma.invoice.findMany({ where: { tenantId, status: { in: ['PENDING', 'PARTIAL'] } }, select: { total: true, paidAmount: true } }),
+    prisma.payment.aggregate({ where: { tenantId, status: 'APPROVED', kind: 'PAYMENT', paidAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) } }, _sum: { amount: true } }),
   ]);
 
-  const totalIncome = ingresosSum._sum.totalAmount || 0;
-  const totalExpenses = gastosSum._sum.originalAmount || 0;
-  const utility = totalIncome - totalExpenses;
+  const warnings = held.filter((h) => {
+    const level = retentionLevel(retentionDays(h.retentionStartedAt), true, settings.retentionWarningDays, settings.retentionMaxDays);
+    return level === 'warning' || level === 'overdue';
+  }).length;
+  const receivable = invoices.reduce((s, i) => s + (i.total - i.paidAmount), 0);
+  const cutoff = settings.dispatchCutoffAt;
+
+  const steps: { title: string; items: Step[] }[] = [
+    {
+      title: '1 · Vender y cobrar',
+      items: [
+        { href: '/pedidos?estado=pago', icon: '🛒', label: 'Pedidos pendientes de pago', count: pendingPay, hint: 'No se compra sin pago' },
+        { href: '/pagos', icon: '💳', label: 'Comprobantes por verificar', count: toVerify, hint: 'Confirma que el dinero llegó', tone: toVerify ? 'warning' : undefined },
+      ],
+    },
+    {
+      title: '2 · Comprar y recibir',
+      items: [
+        { href: '/compras', icon: '🛍️', label: 'Listos para comprar', count: ready, hint: 'Pago aprobado', tone: ready ? 'accent' : undefined },
+        { href: '/recepcion', icon: '📥', label: 'Comprados, por recibir', count: toReceive, hint: 'Esperando llegada a bodega' },
+      ],
+    },
+    {
+      title: '3 · Consolidar y cerrar',
+      items: [
+        { href: '/consolidados', icon: '🧺', label: 'Consolidados abiertos', count: openCons, hint: 'Se despachan si no piden retener' },
+        { href: '/consolidados?vista=retenidos', icon: '⏳', label: 'Retenidos', count: held.length, hint: warnings ? `${warnings} con retención prolongada` : 'Sin alertas', tone: warnings ? 'warning' : undefined },
+      ],
+    },
+    {
+      title: '4 · Armar y enviar',
+      items: [
+        { href: '/cajas', icon: '📦', label: 'Productos sin PKG', count: pool, hint: `${pkgsPrep} PKG en preparación`, tone: pool ? 'accent' : undefined },
+        { href: '/despachos', icon: '🚚', label: 'Despachos en borrador', count: draftDispatch, hint: 'Pendientes de confirmar salida' },
+      ],
+    },
+    {
+      title: '5 · Destino y entrega',
+      items: [
+        { href: '/desconsolidacion', icon: '🗂️', label: 'PKG en tránsito', count: transit, hint: 'Por desconsolidar al llegar' },
+        { href: '/entregas', icon: '🤝', label: 'Listos para retirar', count: pickup, hint: 'Revisa el semáforo de saldo', tone: pickup ? 'success' : undefined },
+      ],
+    },
+  ];
 
   return (
     <>
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Monitoreo general de ShopUSA SaaS: <strong>{tenant.name}</strong></p>
-        </div>
-        <div className="filter-bar" style={{ marginBottom: 0 }}>
-          <div className="input-container">
-            <label>Fecha Inicial</label>
-            <input type="date" className="input-field" defaultValue="2026-04-01" />
-          </div>
-          <div className="input-container">
-            <label>Fecha Final</label>
-            <input type="date" className="input-field" defaultValue="2026-04-30" />
-          </div>
-          <button className="btn">
-            Filtrar
-          </button>
-          <button className="btn btn-secondary">
-            Reporte PDF
-          </button>
-        </div>
-      </header>
+      <PageHeader title={`Hola, ${user.name.split(' ')[0]}`} subtitle="Resumen operativo de Shop USA: lo que está esperando acción en cada paso del recorrido." />
 
-      <div className="dashboard-grid">
-        <div className="glass-panel stat-card">
-          <div className="stat-icon-wrapper">
-            🛒
-          </div>
-          <div className="stat-title">Pedidos del Período</div>
-          <div className="stat-value">{pedidosCount}</div>
-          <div className="stat-desc">En el sistema actualmente</div>
-          <Link href="/pedidos" style={{ color: 'var(--accent-color)', fontWeight: 600, textDecoration: 'none', marginTop: '16px', fontSize: '1rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-            Ver todos los pedidos <span>&rarr;</span>
-          </Link>
-        </div>
+      <KpiGrid>
+        <Kpi label="Por cobrar" value={money(receivable)} tone={receivable > 0 ? 'danger' : 'success'} hint={`${invoices.length} factura(s) con saldo`} href="/pagos?vista=cobrar" />
+        <Kpi label="Cobrado este mes" value={money(payments._sum.amount ?? 0)} tone="success" hint="Pagos aprobados" />
+        <Kpi label="Custodio en Orlando" value={custody} hint="Paquetes en custodia" href="/custodio" />
+        <Kpi label="Cierre semanal" value={cutoff ? longDateTime(cutoff) : 'Sin fecha'} hint={cutoff && cutoff.getTime() < nowMs() ? 'El plazo ya pasó' : 'Límite para solicitar retención'} tone={!cutoff ? 'warning' : undefined} href="/consolidados" />
+      </KpiGrid>
 
-        <div className="glass-panel stat-card">
-          <div className="stat-icon-wrapper" style={{ color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)' }}>
-            📦
-          </div>
-          <div className="stat-title">Cajas en Tránsito</div>
-          <div className="stat-value">{cajasTransitCount}</div>
-          <div className="stat-desc">{cajasDeliveredCount} cajas ya entregadas</div>
-          <Link href="/cajas" style={{ color: 'var(--accent-color)', fontWeight: 600, textDecoration: 'none', marginTop: '16px', fontSize: '1rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-            Ver todas las cajas <span>&rarr;</span>
-          </Link>
-        </div>
-
-        <div className="glass-panel stat-card">
-          <div className="stat-icon-wrapper" style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.1)' }}>
-            $
-          </div>
-          <div className="stat-title">Ingresos Totales</div>
-          <div className="stat-value">${totalIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
-          <div className="stat-desc">Pedidos + Ventas Directas</div>
-          <div style={{ color: '#10b981', fontWeight: 600, marginTop: '16px', fontSize: '1rem', cursor: 'pointer' }}>Ver detalles financieros</div>
-        </div>
-
-        <div className="glass-panel stat-card">
-          <div className="stat-icon-wrapper" style={{ color: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)' }}>
-            📈
-          </div>
-          <div className="stat-title">Utilidad del Período</div>
-          <div className={`stat-value ${utility >= 0 ? 'text-success' : 'text-danger'}`}>
-            ${utility.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-          </div>
-          <div className="stat-desc">Gastos documentados: ${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
-        </div>
-      </div>
-      
-      <div>
-        <h3 style={{ marginBottom: '24px', fontSize: '1.5rem', fontWeight: 700 }}>Actividad Reciente</h3>
-        <div className="glass-panel table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>CLIENTE</th>
-                <th>PAÍS</th>
-                <th>FECHA</th>
-                <th>ESTADO</th>
-                <th>PRODUCTOS</th>
-                <th>TOTAL</th>
-                <th>ACCIONES</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentOrders.map((order) => (
-                <tr key={order.id}>
-                  <td>
-                    <strong style={{ fontSize: '1.05rem' }}>{order.client.name}</strong><br/>
-                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{order.client.code}</span>
-                  </td>
-                  <td>{order.client.country}</td>
-                  <td>{new Date(order.orderDate).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-                  <td>
-                    <span className={`badge ${statusBadgeClass(order.status)}`}>
-                      {statusLabel(order.status)}
-                    </span>
-                  </td>
-                  <td>{order.products.length} prod.</td>
-                  <td>
-                    <strong>${order.totalAmount.toFixed(2)}</strong><br/>
-                    <span style={{ fontSize: '0.8rem', color: order.balance > 0 ? '#ef4444' : '#10b981' }}>
-                      Bal: ${order.balance.toFixed(2)}
-                    </span>
-                  </td>
-                  <td>
-                    <Link href={`/pedidos/${order.id}`} className="btn btn-secondary" style={{ padding: '8px 12px', fontSize: '0.9rem', textDecoration: 'none' }}>Ver</Link>
-                  </td>
-                </tr>
+      <div className="stack">
+        {steps.map((step) => (
+          <Panel key={step.title} title={step.title}>
+            <div className="kpi-grid" style={{ marginBottom: 0 }}>
+              {step.items.map((i) => (
+                <Link key={i.href} href={i.href} className="glass-panel kpi" style={{ background: 'var(--bg-surface-solid)' }}>
+                  <span className="kpi-label">{i.icon} {i.label}</span>
+                  <span className="kpi-value" style={i.count > 0 && i.tone ? { color: i.tone === 'warning' ? '#f59e0b' : i.tone === 'success' ? '#10b981' : 'var(--accent-hover)' } : undefined}>{i.count}</span>
+                  <span className="kpi-hint">{i.hint}</span>
+                </Link>
               ))}
-              {recentOrders.length === 0 && (
-                <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
-                    No hay actividad reciente.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          </Panel>
+        ))}
+        {warnings > 0 && (
+          <div className="alert alert-warning">
+            <span>⚠️</span>
+            <div><strong>{warnings} consolidado(s) con retención prolongada.</strong> <Link href="/consolidados?vista=retenidos" className="link">Revisarlos</Link> <ToneBadge tone="warning" small>≥ {settings.retentionWarningDays} días</ToneBadge></div>
+          </div>
+        )}
       </div>
     </>
   );
 }
-

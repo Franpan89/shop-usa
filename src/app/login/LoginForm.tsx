@@ -15,10 +15,11 @@ export default function LoginForm() {
     try {
       const result = await signIn(formData);
       if (result?.error) setError(result.error);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // redirect() throws internally on success — only a real error lands here.
-      if (err?.digest?.startsWith('NEXT_REDIRECT')) throw err;
-      setError(err.message || 'Error al iniciar sesión');
+      const digest = (err as { digest?: string } | null)?.digest;
+      if (digest?.startsWith('NEXT_REDIRECT')) throw err;
+      setError(err instanceof Error ? err.message : 'Error al iniciar sesión');
     } finally {
       setIsPending(false);
     }

@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "..",
+    "paths": {
+      "@/lib/auth": ["scripts/stubs/auth.ts"],
+      "@/lib/email": ["scripts/stubs/email.ts"],
+      "next/cache": ["scripts/stubs/cache.ts"],
+      "server-only": ["scripts/stubs/empty.ts"],
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["../scripts/**/*.ts", "../src/**/*.ts"]
+}

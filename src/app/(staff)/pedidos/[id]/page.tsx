@@ -1,240 +1,217 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import prisma from '@/lib/prisma';
-import { statusLabel, statusBadgeClass } from '@/lib/orderStatus';
-import OrderStatusChanger from './OrderStatusChanger';
-import RegisterPaymentButton from './RegisterPaymentButton';
-import ProductFormModal from './ProductFormModal';
-import EditShipmentModal from './EditShipmentModal';
-import ProductBoxSelect from './ProductBoxSelect';
+import { requireStaff } from '@/lib/auth';
+import { signedProofUrls } from '@/lib/storage';
+import { ORDER_STATUS, ORDER_STEPS, ORDER_TYPE, PAYMENT_METHOD_LABEL, PRODUCT_STATUS, PRODUCT_STATUS_RANK, orderStepIndex } from '@/lib/domain/flow';
+import { orderSummaryText } from '@/lib/domain/summary';
+import { invoiceBalanceOf, invoiceCode, orderCode } from '@/lib/logistics';
+import { Alert, Empty, PageHeader, Panel, Stepper, StatusBadge, ToneBadge, longDateTime, money, qty, shortDate } from '@/components/ui/kit';
+import Thumb from '@/components/ui/Thumb';
+import CopyButton from '@/components/ui/CopyButton';
+import PaymentReview from '@/components/finance/PaymentReview';
+import { RegisterPaymentModal } from '@/components/finance/FinanceModals';
+import { CancelOrderButton, CourtesyButton, PurchaseAllButton, PurchaseButton } from './OrderActions';
 
-interface Props {
-  params: Promise<{ id: string }>;
-}
+export const dynamic = 'force-dynamic';
 
-export default async function OrderDetailPage({ params }: Props) {
+export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const user = await requireStaff();
   const { id } = await params;
 
   const order = await prisma.order.findUnique({
     where: { id },
     include: {
-      client: { include: { shippingCategory: true } },
-      products: true,
-      box: true,
+      client: { select: { id: true, name: true, code: true, country: true } },
+      products: { orderBy: { createdAt: 'asc' } },
+      invoice: { include: { lines: { orderBy: { sortOrder: 'asc' } }, allocations: { include: { payment: true } } } },
+      benefitUsed: { select: { id: true } },
     },
   });
-
   if (!order) notFound();
 
-  const catalog = await prisma.productCatalog.findMany({
-    where: { tenantId: order.tenantId },
-    select: { name: true, defaultPurchaseValue: true, defaultPurchasedBy: true },
-    orderBy: [{ timesShipped: 'desc' }, { name: 'asc' }],
+  const [pending, history] = await Promise.all([
+    prisma.payment.findMany({
+      where: {
+        clientId: order.clientId,
+        status: 'PENDING_VERIFICATION',
+        OR: order.invoice ? [{ targetInvoiceId: order.invoice.id }, { targetInvoiceId: null }] : undefined,
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.auditLog.findMany({ where: { entity: 'Order', entityId: id }, orderBy: { createdAt: 'desc' }, take: 8 }),
+  ]);
+  const proofs = await signedProofUrls(pending.map((p) => p.proofUrl));
+
+  const invoice = order.invoice;
+  const balance = invoiceBalanceOf(invoice);
+  const paid = invoice ? invoice.paidAmount : 0;
+  const live = order.products.filter((p) => p.status !== 'CANCELLED');
+  const readyToBuy = live.filter((p) => p.status === 'READY_TO_BUY');
+  const editable = !order.cancelledAt && !order.products.some((p) => PRODUCT_STATUS_RANK[p.status] >= PRODUCT_STATUS_RANK.PURCHASED);
+  const serviceLabel = order.type === 'CART' ? 'Servicio Compramos tu carrito' : 'Servicio Personal Shopper';
+
+  const summary = orderSummaryText({
+    code: orderCode(order.number),
+    clientName: order.client.name,
+    typeLabel: ORDER_TYPE[order.type].label,
+    items: order.products.filter((p) => p.status !== 'CANCELLED').map((p) => ({ name: p.name, quantity: p.quantity, unitPrice: p.unitPrice ?? 0 })),
+    subtotal: order.subtotal,
+    taxRatePercent: order.taxRatePercent,
+    tax: order.taxAmount,
+    serviceLabel,
+    serviceRatePercent: order.serviceFeePercent,
+    serviceFee: order.serviceFeeAmount,
+    extraCharges: order.extraCharges,
+    extraChargesNote: order.extraChargesNote,
+    discountAmount: order.discountAmount,
+    total: order.totalAmount,
   });
-  const boxes = await prisma.box.findMany({
-    where: { tenantId: order.tenantId },
-    select: { id: true, internalId: true, status: true },
-    orderBy: { createdAt: 'desc' },
-  });
-  const boxesById = new Map(boxes.map((b) => [b.id, b]));
-
-  const shippingRate = order.client.shippingCategory?.rate ?? 0;
-  const shippingUnit = order.client.shippingCategory?.unit ?? 'HALF_LB';
-
-  const amountPaid = order.totalAmount - order.balance;
-  const ref = `#${order.id.slice(-6).toUpperCase()}`;
-  const baseAmount = order.totalAmount - order.taxAmount - order.serviceFeeAmount;
-
-  const distinctProductBoxIds = Array.from(new Set(order.products.map((p) => p.boxId).filter((id): id is string => !!id)));
-  const isFullyBoxed = order.products.length > 0 && distinctProductBoxIds.length === 1
-    && order.products.every((p) => p.boxId === distinctProductBoxIds[0]);
 
   return (
     <>
-      <header className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <Link href="/pedidos" className="btn btn-secondary" style={{ padding: '8px 12px' }}>
-            &larr; Pedidos
-          </Link>
-          <div>
-            <h1 className="page-title">Pedido {ref}</h1>
-            <p className="page-subtitle">
-              <Link href={`/clientes/${order.client.id}`} style={{ color: 'var(--accent-color)', textDecoration: 'none', fontWeight: 600 }}>
-                {order.client.name}
-              </Link>{' '}
-              — Código: <strong>{order.client.code}</strong>
-            </p>
-          </div>
+      <PageHeader
+        back={{ href: '/pedidos', label: 'Pedidos' }}
+        title={`Pedido ${orderCode(order.number)}`}
+        badges={<><StatusBadge meta={ORDER_STATUS[order.status]} /><ToneBadge tone="secondary">{ORDER_TYPE[order.type].icon} {ORDER_TYPE[order.type].label}</ToneBadge></>}
+        subtitle={<><Link href={`/clientes/${order.client.id}`} className="link">{order.client.name}</Link> · <span className="mono">{order.client.code}</span> · {shortDate(order.orderDate)}{order.channel ? ` · vía ${order.channel}` : ''}</>}
+        actions={
+          <>
+            <CopyButton text={summary} />
+            {editable && <Link href={`/pedidos/${id}/editar`} className="btn btn-secondary btn-sm">✏️ Editar</Link>}
+            {editable && <CancelOrderButton orderId={id} />}
+          </>
+        }
+      />
+
+      {order.status !== 'CANCELLED' && (
+        <div className="glass-panel static panel" style={{ marginBottom: 20 }}>
+          <Stepper steps={ORDER_STEPS} current={orderStepIndex(order.status)} />
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <span className={`badge ${statusBadgeClass(order.status)}`} style={{ fontSize: '0.9rem', padding: '8px 16px' }}>
-            {statusLabel(order.status)}
-          </span>
-          {order.receivedStatus === 'NOVEDAD' && (
-            <span className="badge badge-danger" title={order.receivedNote ?? undefined} style={{ fontSize: '0.9rem', padding: '8px 16px' }}>
-              ⚠️ Novedad
-            </span>
+      )}
+
+      {order.status === 'CANCELLED' && <Alert tone="danger">Pedido cancelado{order.cancelReason ? `: ${order.cancelReason}` : ''}. Los pagos aplicados volvieron al saldo a favor del cliente.</Alert>}
+      {order.status === 'PENDING_PAYMENT' && <Alert tone="warning"><strong>Pendiente de pago.</strong> Shop USA no adelanta dinero: no compres estos productos hasta que el pago esté aprobado.</Alert>}
+      {order.status === 'PAYMENT_REVIEW' && <Alert tone="info"><strong>Hay un comprobante por verificar.</strong> Confirma que el dinero esté en la cuenta y aprueba el pago más abajo.</Alert>}
+      {order.courtesyAuthorized && <Alert tone="success"><strong>Compra autorizada a crédito</strong> por {order.courtesyAuthorizedBy} el {shortDate(order.courtesyAuthorizedAt)}. El saldo pendiente queda como cargo en la cuenta del cliente.</Alert>}
+      {order.benefitUsed && <Alert tone="info">🎁 Esta factura usó un <strong>beneficio por referido</strong>: tasa de servicio {order.serviceFeePercent}% en lugar de {order.baseServiceFeePercent}%.</Alert>}
+
+      <div className="page-grid">
+        <div className="stack">
+          <Panel
+            title={`Productos (${live.length})`}
+            subtitle="Se compran por producto: no hace falta marcar todo el pedido a la vez."
+            actions={readyToBuy.length > 1 ? <PurchaseAllButton productIds={readyToBuy.map((p) => p.id)} /> : undefined}
+            flush
+          >
+            <div className="table-container" style={{ padding: '0 16px 16px' }}>
+              <table className="data-table compact">
+                <thead>
+                  <tr><th /><th>PRODUCTO</th><th className="text-right">PRECIO</th><th className="text-right">SUBTOTAL</th><th>ESTADO</th><th /></tr>
+                </thead>
+                <tbody>
+                  {order.products.map((p) => (
+                    <tr key={p.id} style={p.status === 'CANCELLED' ? { opacity: 0.5 } : undefined}>
+                      <td><Thumb src={p.imageUrl} alt={p.name} /></td>
+                      <td>
+                        <div className="strong">{qty(p.name, p.quantity)}</div>
+                        <div className="muted small">
+                          {[p.storeName, p.variant, p.notes].filter(Boolean).join(' · ')}
+                          {p.url && <> · <a href={p.url} target="_blank" rel="noreferrer" className="link">ver link</a></>}
+                        </div>
+                      </td>
+                      <td className="text-right">{money(p.unitPrice ?? 0)}</td>
+                      <td className="text-right strong">{money((p.unitPrice ?? 0) * p.quantity)}</td>
+                      <td><StatusBadge meta={PRODUCT_STATUS[p.status]} small /></td>
+                      <td className="nowrap">
+                        {p.status === 'READY_TO_BUY' && <PurchaseButton productId={p.id} purchased={false} />}
+                        {p.status === 'PURCHASED' && <PurchaseButton productId={p.id} purchased />}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {order.products.length === 0 && <Empty icon="📦" title="Sin productos" />}
+            </div>
+          </Panel>
+
+          {pending.length > 0 && (
+            <Panel title="Comprobantes por verificar" subtitle="El comprobante no significa que el dinero llegó: verifícalo en la cuenta antes de aprobar.">
+              <div className="stack">
+                {pending.map((p) => (
+                  <div key={p.id} className="group-card" style={{ padding: 16 }}>
+                    <div className="row-between">
+                      <div className="row">
+                        {p.proofUrl && proofs.get(p.proofUrl) ? (
+                          <a href={proofs.get(p.proofUrl)} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">📎 Ver comprobante</a>
+                        ) : (
+                          <span className="muted small">Sin comprobante</span>
+                        )}
+                        <div>
+                          <div className="strong">{money(p.amount)} · {PAYMENT_METHOD_LABEL[p.method]}</div>
+                          <div className="muted small">{shortDate(p.paidAt)}{p.reference ? ` · ref. ${p.reference}` : ''} · enviado {longDateTime(p.createdAt)}</div>
+                        </div>
+                      </div>
+                      <PaymentReview paymentId={p.id} amount={p.amount} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          )}
+
+          {history.length > 0 && (
+            <Panel title="Historial">
+              <div className="stack-sm small">
+                {history.map((h) => (
+                  <div key={h.id} className="row-between">
+                    <span>{h.action}{h.userName ? <span className="muted"> · {h.userName}</span> : null}</span>
+                    <span className="muted">{longDateTime(h.createdAt)}</span>
+                  </div>
+                ))}
+              </div>
+            </Panel>
           )}
         </div>
-      </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '16px', marginBottom: '24px', alignItems: 'stretch' }}>
-        <div className="glass-panel" style={{ padding: '20px 24px' }}>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Cambiar estado
-          </div>
-          <OrderStatusChanger orderId={order.id} currentStatus={order.status} />
-        </div>
-        <div className="glass-panel" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', gap: '8px', minWidth: '220px' }}>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Pagos
-          </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Balance: <strong style={{ color: order.balance > 0 ? '#ef4444' : '#10b981' }}>${order.balance.toFixed(2)}</strong>
-          </div>
-          <RegisterPaymentButton orderId={order.id} balance={order.balance} />
-        </div>
-      </div>
+        <div className="stack">
+          <Panel title="Resumen para el cliente">
+            <dl className="summary">
+              <dt>Subtotal productos</dt><dd>{money(order.subtotal)}</dd>
+              <dt>Tax {order.taxRatePercent}%</dt><dd>{money(order.taxAmount)}</dd>
+              <dt className="strong">Total factura</dt><dd>{money(order.subtotal + order.taxAmount)}</dd>
+              <dt>{serviceLabel} {order.serviceFeePercent}%</dt><dd>{money(order.serviceFeeAmount)}</dd>
+              {order.extraCharges > 0 && (<><dt>{order.extraChargesNote || 'Otros costos'}</dt><dd>{money(order.extraCharges)}</dd></>)}
+              <dt>Descuento{order.discountReason ? ` (${order.discountReason})` : ''}</dt><dd>{order.discountAmount > 0 ? `-${money(order.discountAmount)}` : '$0.00'}</dd>
+              <dt className="total-label">TOTAL A PAGAR</dt><dd className="total">{money(order.totalAmount)}</dd>
+            </dl>
+          </Panel>
 
-      {/* Summary cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '32px' }}>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Fecha</div>
-          <div className="stat-value" style={{ fontSize: '1.3rem' }}>
-            {new Date(order.orderDate).toLocaleDateString('es-ES')}
-          </div>
-        </div>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Subtotal Productos</div>
-          <div className="stat-value" style={{ fontSize: '1.5rem' }}>${baseAmount.toFixed(2)}</div>
-        </div>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div className="stat-title">Peso</div>
-            <EditShipmentModal
-              orderId={order.id}
-              weight={order.weight}
-              shippingCost={order.shippingCost}
-              shippingRate={shippingRate}
-              shippingUnit={shippingUnit}
-            />
-          </div>
-          <div className="stat-value" style={{ fontSize: '1.5rem' }}>{order.weight.toFixed(2)} lbs</div>
-        </div>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Costo de Envío</div>
-          <div className="stat-value" style={{ fontSize: '1.5rem' }}>${order.shippingCost.toFixed(2)}</div>
-        </div>
-        {order.taxAmount > 0 && (
-          <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-            <div className="stat-title">Impuesto (6.5%)</div>
-            <div className="stat-value" style={{ fontSize: '1.5rem', color: '#ef4444' }}>${order.taxAmount.toFixed(2)}</div>
-          </div>
-        )}
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Service Fee ({order.serviceFeePercent}%)</div>
-          <div className="stat-value" style={{ fontSize: '1.5rem', color: '#f59e0b' }}>${order.serviceFeeAmount.toFixed(2)}</div>
-        </div>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Total del Pedido</div>
-          <div className="stat-value" style={{ fontSize: '1.5rem', fontWeight: 800 }}>${order.totalAmount.toFixed(2)}</div>
-        </div>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Pagado</div>
-          <div className="stat-value" style={{ fontSize: '1.5rem', color: '#10b981' }}>${amountPaid.toFixed(2)}</div>
-        </div>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Balance Pendiente</div>
-          <div className="stat-value" style={{ fontSize: '1.5rem', color: order.balance > 0 ? '#ef4444' : '#10b981' }}>
-            ${order.balance.toFixed(2)}
-          </div>
-        </div>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Caja Asignada</div>
-          <div className="stat-value" style={{ fontSize: '1.1rem', color: distinctProductBoxIds.length > 0 ? 'var(--accent-color)' : 'var(--text-muted)' }}>
-            {isFullyBoxed
-              ? `📦 ${boxesById.get(distinctProductBoxIds[0])?.internalId ?? ''}`
-              : distinctProductBoxIds.length > 0
-                ? `📦 Dividido en ${distinctProductBoxIds.length} cajas`
-                : 'Sin caja'}
-          </div>
-        </div>
-      </div>
-
-      {/* Products table */}
-      <div className="glass-panel" style={{ padding: '32px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Productos / Ítems ({order.products.length})</h2>
-          <ProductFormModal orderId={order.id} catalog={catalog} />
-        </div>
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>NOMBRE</th>
-                <th>COMPRADO POR</th>
-                <th style={{ textAlign: 'right' }}>VALOR COMPRA</th>
-                <th style={{ textAlign: 'right' }}>PREPAGO</th>
-                <th style={{ textAlign: 'right' }}>SUBTOTAL</th>
-                <th>CAJA</th>
-                <th>ACCIONES</th>
-              </tr>
-            </thead>
-            <tbody>
-              {order.products.map((p, i) => {
-                const subtotal = p.purchasedBy === 'SHOPUSA' ? (p.purchaseValue ?? 0) : 0;
-                return (
-                  <tr key={p.id}>
-                    <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{i + 1}</td>
-                    <td style={{ fontWeight: 600 }}>{p.name}</td>
-                    <td>
-                      <span className={`badge ${p.purchasedBy === 'SHOPUSA' ? 'badge-warning' : 'badge-secondary'}`}>
-                        {p.purchasedBy === 'SHOPUSA' ? '🏪 ShopUSA' : '👤 Cliente'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {p.purchasedBy === 'SHOPUSA' && p.purchaseValue != null
-                        ? `$${p.purchaseValue.toFixed(2)}`
-                        : '—'}
-                    </td>
-                    <td style={{ textAlign: 'right', color: '#10b981', fontWeight: 600 }}>
-                      {p.prepaidAmount > 0 ? `$${p.prepaidAmount.toFixed(2)}` : '—'}
-                    </td>
-                    <td style={{ textAlign: 'right', fontWeight: 700 }}>${subtotal.toFixed(2)}</td>
-                    <td>
-                      <ProductBoxSelect productId={p.id} currentBoxId={p.boxId} boxes={boxes} />
-                    </td>
-                    <td>
-                      <ProductFormModal orderId={order.id} catalog={catalog} product={p} />
-                    </td>
-                  </tr>
-                );
-              })}
-              {order.products.length === 0 && (
-                <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
-                    Sin productos registrados.
-                  </td>
-                </tr>
+          <Panel title="Pago" subtitle={invoice ? `${invoiceCode(invoice.number)} · cuenta del cliente` : undefined}>
+            <div className="stack-sm">
+              <div className="row-between"><span className="muted">Pagado</span><strong className="money-ok">{money(paid)}</strong></div>
+              <div className="row-between"><span className="muted">Saldo pendiente</span><strong className={balance > 0.004 ? 'money-due' : 'money-ok'}>{money(balance)}</strong></div>
+              {invoice && invoice.allocations.length > 0 && (
+                <div className="muted small">
+                  {invoice.allocations.map((a) => (
+                    <div key={a.id}>{shortDate(a.payment.paidAt)} · {money(a.amount)} · {PAYMENT_METHOD_LABEL[a.payment.method]}</div>
+                  ))}
+                </div>
               )}
-            </tbody>
-            {order.products.length > 0 && (
-              <tfoot>
-                <tr style={{ borderTop: '2px solid rgba(128,128,128,0.2)' }}>
-                  <td colSpan={4} style={{ fontWeight: 700, padding: '14px 16px' }}>TOTALES</td>
-                  <td style={{ textAlign: 'right', fontWeight: 700, color: '#10b981', padding: '14px 16px' }}>
-                    ${order.products.reduce((s, p) => s + p.prepaidAmount, 0).toFixed(2)}
-                  </td>
-                  <td style={{ textAlign: 'right', fontWeight: 800, fontSize: '1.05rem', padding: '14px 16px' }}>
-                    ${order.totalAmount.toFixed(2)}
-                  </td>
-                  <td />
-                  <td />
-                </tr>
-              </tfoot>
-            )}
-          </table>
+              {!order.cancelledAt && balance > 0.004 && invoice && (
+                <div className="row" style={{ marginTop: 6 }}>
+                  <RegisterPaymentModal
+                    clientId={order.clientId}
+                    invoices={[{ id: invoice.id, label: `${invoiceCode(invoice.number)} — este pedido`, balance }]}
+                    defaultTargetId={invoice.id}
+                    trigger="💳 Registrar pago"
+                    triggerClassName="btn btn-sm"
+                  />
+                  {user.role === 'ADMIN' && editable && <CourtesyButton orderId={id} authorized={order.courtesyAuthorized} />}
+                </div>
+              )}
+            </div>
+          </Panel>
         </div>
       </div>
     </>

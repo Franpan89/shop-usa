@@ -1,158 +1,234 @@
 import prisma from '@/lib/prisma';
 import { requireAdmin } from '@/lib/auth';
-import { updateShippingCategory, deleteShippingCategory } from '../../actions/shipping';
-import AddCategoryForm from './AddCategoryForm';
+import { getCountryRules, getSettings, getTenantId } from '@/lib/tenant';
+import { billableWeight, shippingCost } from '@/lib/domain/pricing';
+import { Alert, PageHeader, Panel, Tabs, ToneBadge, money } from '@/components/ui/kit';
+import ActionForm from '@/components/ui/ActionForm';
+import ActionButton from '@/components/ui/ActionButton';
+import {
+  deleteCountryRule,
+  savePaymentInstructions,
+  saveCountryRule,
+  saveCustody,
+  savePkgNumbering,
+  saveRates,
+  saveRetention,
+  setNextClientNumber,
+} from '@/app/actions/settings';
+import { createShippingCategory, deleteShippingCategory, setShippingCategoryActive, updateShippingCategory } from '@/app/actions/shipping';
 
 export const dynamic = 'force-dynamic';
 
-function calcTiers(rate: number, divisor: number, count = 8) {
-  return Array.from({ length: count }, (_, i) => ({
-    min: i === 0 ? 0.01 : parseFloat((i * divisor + 0.01).toFixed(2)),
-    max: parseFloat(((i + 1) * divisor).toFixed(2)),
-    cost: parseFloat(((i + 1) * rate).toFixed(2)),
-  }));
+const SECTIONS = [
+  ['tarifas', 'Tarifas de envío'],
+  ['tasas', 'Tasas e impuestos'],
+  ['paises', 'Países y reglas'],
+  ['consolidacion', 'Consolidación y retención'],
+  ['pkg', 'PKG y clientes'],
+  ['custodio', 'Custodio'],
+  ['pagos', 'Datos de pago'],
+] as const;
+
+function Field({ label, name, defaultValue, type = 'number', step = '0.01', hint, min = '0', required = true }: { label: string; name: string; defaultValue?: string | number; type?: string; step?: string; hint?: string; min?: string; required?: boolean }) {
+  return (
+    <div className="input-container">
+      <label>{label}</label>
+      <input name={name} type={type} step={step} min={type === 'number' ? min : undefined} className="input-field" defaultValue={defaultValue} required={required} />
+      {hint && <span className="input-hint">{hint}</span>}
+    </div>
+  );
 }
 
-export default async function ConfiguracionesPage() {
+export default async function ConfiguracionesPage({ searchParams }: { searchParams: Promise<{ seccion?: string }> }) {
   await requireAdmin();
-
-  const tenant = await prisma.tenant.findFirst();
-
-  if (!tenant) {
-    return <p style={{ padding: '40px' }}>No hay tenant configurado.</p>;
-  }
-
-  let categories = await prisma.shippingCategory.findMany({
-    where: { tenantId: tenant.id },
-    orderBy: [{ country: 'asc' }, { name: 'asc' }],
-  });
-
-  // Seed defaults if none exist
-  if (categories.length === 0) {
-    await prisma.shippingCategory.createMany({
-      data: [
-        { tenantId: tenant.id, name: 'Ecuador Normal', country: 'Ecuador', rate: 3.75, unit: 'HALF_LB' },
-        { tenantId: tenant.id, name: 'Ecuador Migrante', country: 'Ecuador', rate: 3.25, unit: 'HALF_LB' },
-        { tenantId: tenant.id, name: 'Ecuador Emprendedor', country: 'Ecuador', rate: 5.41, unit: 'LB' },
-        { tenantId: tenant.id, name: 'Panamá', country: 'Panamá', rate: 2.75, unit: 'HALF_LB' },
-      ],
-    });
-    categories = await prisma.shippingCategory.findMany({
-      where: { tenantId: tenant.id },
-      orderBy: [{ country: 'asc' }, { name: 'asc' }],
-    });
-  }
-
-  async function handleDelete(formData: FormData) {
-    'use server';
-    await deleteShippingCategory(formData.get('id') as string);
-  }
+  const { seccion = 'tarifas' } = await searchParams;
+  const tenantId = await getTenantId();
+  const settings = await getSettings();
+  const [categories, rules, clientCounter] = await Promise.all([
+    prisma.shippingCategory.findMany({ where: { tenantId }, include: { _count: { select: { clients: true } } }, orderBy: [{ country: 'asc' }, { name: 'asc' }] }),
+    getCountryRules(),
+    prisma.counter.findUnique({ where: { tenantId_key: { tenantId, key: 'client' } } }),
+  ]);
+  const countries = rules.map((r) => r.name);
 
   return (
     <>
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">Configuraciones</h1>
-          <p className="page-subtitle">Categorías de envío por cliente y configuraciones globales.</p>
-        </div>
-      </header>
+      <PageHeader title="Configuraciones" subtitle="Todo lo que Shop USA puede cambiar sin pedir un cambio de código: tarifas, tasas, reglas por país y políticas." />
+      <Tabs items={SECTIONS.map(([key, label]) => ({ href: `/configuraciones?seccion=${key}`, label, active: seccion === key }))} />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Categorías de Envío</h2>
-        <AddCategoryForm existingNames={categories.map(c => c.name)} />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '24px' }}>
-        {categories.map(category => {
-          const divisor = category.unit === 'LB' ? 1 : 0.5;
-          const tiers = calcTiers(category.rate, divisor);
-          const unitLabel = category.unit === 'LB' ? 'lb' : '0.5 lbs';
-          return (
-            <div key={category.id} className="glass-panel" style={{ padding: '28px' }}>
-              {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <div>
-                  <div style={{ fontSize: '1.3rem', fontWeight: 800 }}>{category.name}</div>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    {category.country} · ${category.rate.toFixed(2)} por cada {unitLabel}
+      {seccion === 'tarifas' && (
+        <div className="stack">
+          <Alert tone="info">El precio es <strong>por libra</strong>. “Fracciones de 0.5 lb” redondea el peso al siguiente 0.5; “libra completa” lo redondea a la siguiente libra. Cambiar una tarifa no altera consolidados ya cerrados.</Alert>
+          {categories.map((c) => {
+            const example = 6.37;
+            return (
+              <Panel
+                key={c.id}
+                title={c.name}
+                subtitle={`${c.country} · ${c._count.clients} cliente(s)`}
+                actions={
+                  <>
+                    <ToneBadge tone={c.active ? 'success' : 'secondary'}>{c.active ? 'Activa' : 'Inactiva'}</ToneBadge>
+                    <ActionButton className="btn btn-ghost btn-sm" success={c.active ? 'Tarifa desactivada' : 'Tarifa activada'} action={() => setShippingCategoryActive(c.id, !c.active)}>{c.active ? 'Desactivar' : 'Activar'}</ActionButton>
+                  </>
+                }
+              >
+                <ActionForm action={updateShippingCategory} success="Tarifa actualizada">
+                  <input type="hidden" name="id" value={c.id} />
+                  <div className="form-grid">
+                    <Field label="Nombre" name="name" type="text" defaultValue={c.name} />
+                    <div className="input-container">
+                      <label>País</label>
+                      <select name="country" className="input-field" defaultValue={c.country}>{countries.map((x) => <option key={x}>{x}</option>)}</select>
+                    </div>
+                    <Field label="Precio por libra ($)" name="pricePerLb" defaultValue={c.pricePerLb} min="0.01" />
+                    <div className="input-container">
+                      <label>Se factura por</label>
+                      <select name="unit" className="input-field" defaultValue={c.unit}>
+                        <option value="HALF_LB">Fracciones de 0.5 lb</option>
+                        <option value="LB">Libra completa</option>
+                      </select>
+                    </div>
                   </div>
-                </div>
-                <form action={handleDelete}>
-                  <input type="hidden" name="id" value={category.id} />
-                  <button
-                    type="submit"
-                    className="btn btn-secondary"
-                    style={{ padding: '6px 10px', fontSize: '0.95rem', color: '#ef4444' }}
-                    title="Eliminar categoría"
-                  >
-                    🗑️
-                  </button>
-                </form>
+                  <div className="row-between" style={{ marginTop: 14 }}>
+                    <span className="muted small">Ejemplo: {example} lb reales → {billableWeight(example, c.unit)} lb facturables → <strong>{money(shippingCost(example, c.pricePerLb, c.unit))}</strong></span>
+                    <div className="row">
+                      <button type="submit" className="btn btn-sm">Guardar</button>
+                    </div>
+                  </div>
+                </ActionForm>
+                {c._count.clients === 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <ActionButton className="btn btn-ghost btn-sm" confirm="¿Eliminar esta tarifa?" success="Tarifa eliminada" action={() => deleteShippingCategory(c.id)}>Eliminar</ActionButton>
+                  </div>
+                )}
+              </Panel>
+            );
+          })}
+          <Panel title="Nueva tarifa">
+            <ActionForm action={createShippingCategory} success="Tarifa creada" resetOnSuccess>
+              <div className="form-grid">
+                <Field label="Nombre" name="name" type="text" />
+                <div className="input-container"><label>País</label><select name="country" className="input-field">{countries.map((x) => <option key={x}>{x}</option>)}</select></div>
+                <Field label="Precio por libra ($)" name="pricePerLb" min="0.01" />
+                <div className="input-container"><label>Se factura por</label><select name="unit" className="input-field"><option value="HALF_LB">Fracciones de 0.5 lb</option><option value="LB">Libra completa</option></select></div>
               </div>
+              <button type="submit" className="btn btn-sm" style={{ marginTop: 14 }}>Crear tarifa</button>
+            </ActionForm>
+          </Panel>
+        </div>
+      )}
 
-              {/* Edit rate form */}
-              <form action={updateShippingCategory} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', marginBottom: '20px' }}>
-                <input type="hidden" name="id" value={category.id} />
-                <div className="input-container" style={{ flex: 1, margin: 0 }}>
-                  <label style={{ fontSize: '0.78rem' }}>Tarifa ($)</label>
-                  <input
-                    name="rate"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    className="input-field"
-                    defaultValue={category.rate}
-                    style={{ padding: '8px 12px' }}
-                    required
-                  />
-                </div>
-                <div className="input-container" style={{ flex: 1, margin: 0 }}>
-                  <label style={{ fontSize: '0.78rem' }}>Unidad</label>
-                  <select name="unit" className="input-field" defaultValue={category.unit} style={{ padding: '8px 12px' }}>
-                    <option value="HALF_LB">por 0.5 lbs</option>
-                    <option value="LB">por lb</option>
-                  </select>
-                </div>
-                <button type="submit" className="btn" style={{ padding: '8px 18px', whiteSpace: 'nowrap' }}>
-                  Actualizar
-                </button>
-              </form>
-
-              {/* Tier preview table */}
-              <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead>
-                    <tr style={{ background: 'rgba(128,128,128,0.08)' }}>
-                      <th style={{ padding: '8px 14px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.75rem', letterSpacing: '0.06em' }}>PESO (lbs)</th>
-                      <th style={{ padding: '8px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.75rem', letterSpacing: '0.06em' }}>COSTO</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tiers.map((tier, i) => (
-                      <tr key={i} style={{ borderTop: '1px solid var(--border-color)', background: i % 2 === 0 ? 'transparent' : 'rgba(128,128,128,0.03)' }}>
-                        <td style={{ padding: '7px 14px', color: 'var(--text-muted)' }}>
-                          {tier.min.toFixed(2)} – {tier.max.toFixed(2)} lbs
-                        </td>
-                        <td style={{ padding: '7px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--accent-color)' }}>
-                          ${tier.cost.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
-                    <tr style={{ borderTop: '1px solid var(--border-color)', background: 'rgba(128,128,128,0.04)' }}>
-                      <td style={{ padding: '7px 14px', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>
-                        Más de {(tiers.length * divisor).toFixed(2)} lbs…
-                      </td>
-                      <td style={{ padding: '7px 14px', textAlign: 'right', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                        +${category.rate.toFixed(2)}/{unitLabel}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+      {seccion === 'tasas' && (
+        <Panel title="Tasas e impuestos" subtitle="La tasa de servicio de cada cliente se ajusta en su ficha; aquí están los valores generales.">
+          <ActionForm action={saveRates} success="Tasas guardadas">
+            <div className="form-grid">
+              <Field label="Tax (sales tax) %" name="taxRatePercent" defaultValue={settings.taxRatePercent} step="0.01" hint="Se aplica sobre el valor de los productos." />
+              <Field label="Tasa Personal Shopper sugerida %" name="personalShopperRatePercent" defaultValue={settings.personalShopperRatePercent} step="0.5" hint="Valor por defecto al crear un cliente (20 % general, 10 % familiar)." />
+              <Field label="Tasa “Compramos tu carrito” %" name="cartServiceRatePercent" defaultValue={settings.cartServiceRatePercent} step="0.5" hint="Sobre productos + sales tax." />
+              <Field label="Beneficio por referido (puntos)" name="referralDiscountPoints" defaultValue={settings.referralDiscountPoints} step="0.5" hint="Puntos porcentuales menos en la tasa de UNA factura de Personal Shopper." />
             </div>
-          );
-        })}
-      </div>
+            <button type="submit" className="btn btn-sm" style={{ marginTop: 14 }}>Guardar</button>
+          </ActionForm>
+        </Panel>
+      )}
+
+      {seccion === 'paises' && (
+        <div className="stack">
+          <Alert tone="info">Cada país define cómo se despacha y se entrega. Para agregar Colombia, Perú u otro destino basta crear una fila nueva: el prefijo se usa para el código de cliente (EC001, PTY004…).</Alert>
+          {rules.map((r) => (
+            <Panel key={r.id} title={`${r.name} · prefijo ${r.codePrefix}`} actions={<ToneBadge tone={r.active ? 'success' : 'secondary'}>{r.active ? 'Activo' : 'Inactivo'}</ToneBadge>}>
+              <ActionForm action={saveCountryRule} success="País actualizado">
+                <input type="hidden" name="id" value={r.id} />
+                <div className="form-grid">
+                  <Field label="País" name="name" type="text" defaultValue={r.name} />
+                  <Field label="Prefijo del código" name="codePrefix" type="text" defaultValue={r.codePrefix} />
+                </div>
+                <div className="stack-sm" style={{ margin: '14px 0' }}>
+                  <label className="check"><input type="checkbox" name="active" defaultChecked={r.active} /> País activo (aparece al crear clientes)</label>
+                  <label className="check"><input type="checkbox" name="allowDispatchWithBalance" defaultChecked={r.allowDispatchWithBalance} /> Permitir despacho internacional con saldo pendiente</label>
+                  <label className="check"><input type="checkbox" name="requireFullPaymentBeforeDelivery" defaultChecked={r.requireFullPaymentBeforeDelivery} /> Exigir pago completo antes de la entrega</label>
+                  <label className="check"><input type="checkbox" name="usesDeconsolidation" defaultChecked={r.usesDeconsolidation} /> Usa cajas compartidas y desconsolidación</label>
+                </div>
+                <div className="row">
+                  <button type="submit" className="btn btn-sm">Guardar</button>
+                  <ActionButton className="btn btn-ghost btn-sm" confirm={`¿Eliminar ${r.name}?`} success="País eliminado" action={() => deleteCountryRule(r.id)}>Eliminar</ActionButton>
+                </div>
+              </ActionForm>
+            </Panel>
+          ))}
+          <Panel title="Nuevo país de destino">
+            <ActionForm action={saveCountryRule} success="País creado" resetOnSuccess>
+              <div className="form-grid"><Field label="País" name="name" type="text" /><Field label="Prefijo (2–4 letras)" name="codePrefix" type="text" /></div>
+              <div className="stack-sm" style={{ margin: '14px 0' }}>
+                <label className="check"><input type="checkbox" name="requireFullPaymentBeforeDelivery" defaultChecked /> Exigir pago completo antes de la entrega</label>
+                <label className="check"><input type="checkbox" name="allowDispatchWithBalance" /> Permitir despacho internacional con saldo pendiente</label>
+                <label className="check"><input type="checkbox" name="usesDeconsolidation" /> Usa cajas compartidas y desconsolidación</label>
+              </div>
+              <button type="submit" className="btn btn-sm">Crear país</button>
+            </ActionForm>
+          </Panel>
+        </div>
+      )}
+
+      {seccion === 'consolidacion' && (
+        <Panel title="Retención de mercancía" subtitle="La política es comercial: el sistema avisa pero nunca bloquea ni despacha por su cuenta.">
+          <ActionForm action={saveRetention} success="Política guardada">
+            <div className="form-grid">
+              <Field label="Advertencia de retención prolongada (días)" name="retentionWarningDays" defaultValue={settings.retentionWarningDays} step="1" min="1" />
+              <Field label="Máximo aproximado de retención (días)" name="retentionMaxDays" defaultValue={settings.retentionMaxDays} step="1" min="1" />
+            </div>
+            <label className="check" style={{ margin: '14px 0' }}><input type="checkbox" name="clientAlertsEnabled" defaultChecked={settings.clientAlertsEnabled} /> Enviar alertas automáticas por correo al cliente al llegar a esos días</label>
+            <button type="submit" className="btn btn-sm">Guardar</button>
+          </ActionForm>
+          <p className="muted small" style={{ marginTop: 14 }}>La fecha y hora límite semanal para solicitar retención se fija en <strong>Consolidados</strong>.</p>
+        </Panel>
+      )}
+
+      {seccion === 'pkg' && (
+        <div className="stack">
+          <Panel title="Numeración de PKG" subtitle="El primer PKG usa este número y el sistema sugiere el siguiente disponible. Se puede cambiar a mano; nunca se repiten.">
+            <ActionForm action={savePkgNumbering} success="Numeración guardada">
+              <div className="form-grid"><Field label="Número inicial de PKG" name="pkgStartNumber" defaultValue={settings.pkgStartNumber} step="1" min="1" hint="Ej. 500 → PKG500, PKG501…" /></div>
+              <button type="submit" className="btn btn-sm" style={{ marginTop: 14 }}>Guardar</button>
+            </ActionForm>
+          </Panel>
+          <Panel title="Códigos de cliente" subtitle="Se generan solos: prefijo del país + consecutivo. Un cliente = un código permanente.">
+            <ActionForm action={setNextClientNumber} success="Consecutivo actualizado">
+              <div className="form-grid"><Field label="Próximo número de cliente" name="nextClientNumber" defaultValue={(clientCounter?.value ?? 0) + 1} step="1" min="1" hint="Útil para continuar la numeración que ya usaba Shop USA." /></div>
+              <button type="submit" className="btn btn-sm" style={{ marginTop: 14 }}>Guardar</button>
+            </ActionForm>
+          </Panel>
+        </div>
+      )}
+
+      {seccion === 'custodio' && (
+        <Panel title="Custodio de paquetería" subtitle="Tarifas por tamaño de paquete y costo del delivery.">
+          <ActionForm action={saveCustody} success="Tarifas guardadas">
+            <div className="form-grid">
+              <Field label="Small ($ por paquete)" name="custodySmallFee" defaultValue={settings.custodySmallFee} />
+              <Field label="Medium ($ por paquete)" name="custodyMediumFee" defaultValue={settings.custodyMediumFee} />
+              <Field label="Large ($ por paquete)" name="custodyLargeFee" defaultValue={settings.custodyLargeFee} />
+              <Field label="Delivery base ($)" name="deliveryBaseFee" defaultValue={settings.deliveryBaseFee} />
+              <Field label="Millas incluidas en el delivery base" name="deliveryBaseMiles" defaultValue={settings.deliveryBaseMiles} step="0.5" />
+              <Field label="Costo por milla adicional ($)" name="deliveryExtraPerMile" defaultValue={settings.deliveryExtraPerMile} />
+            </div>
+            <button type="submit" className="btn btn-sm" style={{ marginTop: 14 }}>Guardar</button>
+          </ActionForm>
+        </Panel>
+      )}
+
+      {seccion === 'pagos' && (
+        <Panel title="Datos para transferencias" subtitle="Este texto lo ve el cliente en su portal al pagar un pedido o su saldo.">
+          <ActionForm action={savePaymentInstructions} success="Datos guardados">
+            <div className="input-container">
+              <label>Cuentas y datos de pago</label>
+              <textarea name="paymentInstructions" className="input-field" rows={7} defaultValue={settings.paymentInstructions ?? ''} placeholder={'Banco: …\nTitular: …\nCuenta: …\nZelle: …'} />
+            </div>
+            <button type="submit" className="btn btn-sm" style={{ marginTop: 14 }}>Guardar</button>
+          </ActionForm>
+        </Panel>
+      )}
     </>
   );
 }

@@ -3,30 +3,37 @@ import { requirePortalClient } from '@/lib/auth';
 import { signOut } from '@/app/actions/auth';
 import BgBlobs from '@/components/BgBlobs';
 import BrandLogo from '@/components/BrandLogo';
+import Toaster from '@/components/ui/Toast';
+
+const NAV = [
+  { href: '/portal', label: 'Mi mercancía' },
+  { href: '/portal/pedidos', label: 'Mis pedidos' },
+  { href: '/portal/estado-de-cuenta', label: 'Estado de cuenta' },
+  { href: '/portal/perfil', label: 'Mi perfil' },
+];
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const client = await requirePortalClient();
 
   return (
-    <div style={{ maxWidth: '960px', margin: '0 auto', padding: '24px' }}>
+    <div className="portal-shell">
       <BgBlobs />
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
-        <div className="logo-container">
-          <BrandLogo height={30} />
-        </div>
-        <nav style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-          <Link href="/portal" style={{ textDecoration: 'none', color: 'var(--text-primary)', fontWeight: 600 }}>Mis Pedidos</Link>
-          <Link href="/portal/estado-de-cuenta" style={{ textDecoration: 'none', color: 'var(--text-primary)', fontWeight: 600 }}>Estado de Cuenta</Link>
-          <Link href="/portal/perfil" style={{ textDecoration: 'none', color: 'var(--text-primary)', fontWeight: 600 }}>Mi Perfil</Link>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{client.name}</span>
+      <header className="portal-header">
+        <div className="logo-container"><BrandLogo height={30} /></div>
+        <nav className="portal-nav" aria-label="Portal del cliente">
+          {NAV.map((n) => (
+            <Link key={n.href} href={n.href} className="portal-link">{n.label}</Link>
+          ))}
+          <span className="muted small">{client.name}</span>
           <form action={signOut}>
             <button type="submit" title="Cerrar sesión" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.1rem' }}>🚪</button>
           </form>
         </nav>
       </header>
-      <div className="glass-container" style={{ padding: 0 }}>
+      <div className="glass-container" style={{ padding: 0, height: 'auto', overflow: 'visible' }}>
         {children}
       </div>
+      <Toaster />
     </div>
   );
 }

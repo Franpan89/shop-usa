@@ -1,25 +1,35 @@
+import Link from 'next/link';
 import prisma from '@/lib/prisma';
+import { requireStaff } from '@/lib/auth';
+import { INVOICE_TYPE } from '@/lib/domain/flow';
+import { invoiceCode } from '@/lib/logistics';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ContabilidadPage() {
+  await requireStaff();
   const tenant = await prisma.tenant.findFirst();
 
-  const [expenses, orders] = await Promise.all([
+  const [expenses, invoices, payments] = await Promise.all([
     tenant ? prisma.expense.findMany({
       where: { tenantId: tenant.id },
       orderBy: { expenseDate: 'desc' }
     }) : Promise.resolve([]),
-    tenant ? prisma.order.findMany({
-      where: { tenantId: tenant.id },
-      include: { client: true }
+    tenant ? prisma.invoice.findMany({
+      where: { tenantId: tenant.id, status: { not: 'CANCELLED' } },
+      include: { client: { select: { name: true, code: true } } },
+    }) : Promise.resolve([]),
+    // Solo dinero real: los créditos/ajustes otorgados no son un cobro.
+    tenant ? prisma.payment.findMany({
+      where: { tenantId: tenant.id, status: 'APPROVED', kind: 'PAYMENT' },
+      select: { amount: true },
     }) : Promise.resolve([]),
   ]);
 
-  // --- Financial calculations ---
-  const totalVentas = orders.reduce((sum, o) => sum + (o.totalAmount ?? 0), 0);
-  const totalCobrado = totalVentas - orders.reduce((sum, o) => sum + (o.balance ?? 0), 0);
-  const totalPorCobrar = orders.reduce((sum, o) => sum + (o.balance ?? 0), 0);
+  // --- Cálculos financieros (sobre facturas y pagos del libro de cuentas) ---
+  const totalVentas = invoices.reduce((sum, i) => sum + i.total, 0);
+  const totalCobrado = payments.reduce((sum, p) => sum + p.amount, 0);
+  const totalPorCobrar = invoices.reduce((sum, i) => sum + Math.max(0, i.total - i.paidAmount), 0);
   const totalGastos = expenses.reduce((sum, e) => sum + (e.originalAmount ?? 0), 0);
   const utilidad = totalVentas - totalGastos;
   const utilidadNeta = totalCobrado - totalGastos;
@@ -52,7 +62,7 @@ export default async function ContabilidadPage() {
             <div style={{ fontSize: '1.8rem', marginBottom: '6px' }}>💰</div>
             <div className="stat-title">Total Ventas</div>
             <div className="stat-value" style={{ fontSize: '1.9rem', color: '#10b981' }}>${totalVentas.toFixed(2)}</div>
-            <div className="stat-desc">{orders.length} pedido(s) registrado(s)</div>
+            <div className="stat-desc">{invoices.length} factura(s) emitida(s)</div>
           </div>
 
           <div className="glass-panel stat-card" style={{ padding: '22px' }}>
@@ -182,7 +192,7 @@ export default async function ContabilidadPage() {
         <>
           <div style={{ margin: '32px 0 12px 4px' }}>
             <h3 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              ⏳ Pedidos con Saldo Pendiente
+              ⏳ Facturas con Saldo Pendiente
             </h3>
           </div>
           <div className="glass-panel table-container">
@@ -190,32 +200,30 @@ export default async function ContabilidadPage() {
               <thead>
                 <tr>
                   <th>CLIENTE</th>
+                  <th>FACTURA</th>
                   <th>FECHA</th>
-                  <th>ESTADO</th>
-                  <th>TOTAL PEDIDO</th>
+                  <th>CONCEPTO</th>
+                  <th>TOTAL</th>
                   <th>COBRADO</th>
                   <th>POR COBRAR</th>
                 </tr>
               </thead>
               <tbody>
-                {orders
-                  .filter(o => (o.balance ?? 0) > 0)
-                  .sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0))
-                  .map((order) => (
-                    <tr key={order.id}>
+                {invoices
+                  .filter((i) => i.total - i.paidAmount > 0.004)
+                  .sort((a, b) => (b.total - b.paidAmount) - (a.total - a.paidAmount))
+                  .map((invoice) => (
+                    <tr key={invoice.id}>
                       <td>
-                        <strong>{order.client.name}</strong><br/>
-                        <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{order.client.code}</span>
+                        <Link href={`/clientes/${invoice.clientId}/estado-de-cuenta`} className="link">{invoice.client.name}</Link><br/>
+                        <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{invoice.client.code}</span>
                       </td>
-                      <td>{new Date(order.orderDate).toLocaleDateString('es-ES')}</td>
-                      <td>
-                        <span className={`badge ${order.status === 'DELIVERED' ? 'badge-success' : order.status === 'IN_TRANSIT' ? 'badge-warning' : 'badge-secondary'}`}>
-                          {order.status === 'DELIVERED' ? 'Entregado' : order.status === 'IN_TRANSIT' ? 'En Tránsito' : 'Pendiente'}
-                        </span>
-                      </td>
-                      <td><strong>${(order.totalAmount ?? 0).toFixed(2)}</strong></td>
-                      <td style={{ color: '#10b981', fontWeight: 600 }}>${((order.totalAmount ?? 0) - (order.balance ?? 0)).toFixed(2)}</td>
-                      <td style={{ color: '#ef4444', fontWeight: 700 }}>${(order.balance ?? 0).toFixed(2)}</td>
+                      <td className="mono">{invoiceCode(invoice.number)}</td>
+                      <td>{new Date(invoice.issueDate).toLocaleDateString('es-ES')}</td>
+                      <td>{INVOICE_TYPE[invoice.type]}</td>
+                      <td><strong>${invoice.total.toFixed(2)}</strong></td>
+                      <td style={{ color: '#10b981', fontWeight: 600 }}>${invoice.paidAmount.toFixed(2)}</td>
+                      <td style={{ color: '#ef4444', fontWeight: 700 }}>${(invoice.total - invoice.paidAmount).toFixed(2)}</td>
                     </tr>
                   ))}
               </tbody>

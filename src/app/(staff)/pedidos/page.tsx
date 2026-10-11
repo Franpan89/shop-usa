@@ -1,280 +1,145 @@
-import prisma from '@/lib/prisma';
 import Link from 'next/link';
-import NewOrderModal from './NewOrderModal';
-import OrderActionsCell from './OrderActionsCell';
-import {
-  ORDER_STATUSES,
-  STATUS_ICON,
-  STATUS_SHORT_LABEL_ES,
-  normalizeOrderStatus,
-  statusBadgeClass,
-  statusLabel,
-  type OrderStatus,
-} from '@/lib/orderStatus';
+import type { OrderStatus, Prisma } from '@prisma/client';
+import prisma from '@/lib/prisma';
+import { requireStaff } from '@/lib/auth';
+import { getTenantId } from '@/lib/tenant';
+import { ORDER_STATUS, ORDER_TYPE } from '@/lib/domain/flow';
+import { invoiceBalanceOf, orderCode } from '@/lib/logistics';
+import SearchFilter from '@/components/SearchFilter';
+import SelectFilter from '@/components/SelectFilter';
+import { Empty, PageHeader, StatusBadge, Tabs, money, shortDate } from '@/components/ui/kit';
+
+export const dynamic = 'force-dynamic';
 
 interface Props {
-  searchParams: Promise<{ status?: string; clientId?: string }>;
+  searchParams: Promise<{ q?: string; estado?: string; tipo?: string; clientId?: string }>;
 }
 
+const TABS: { key: string; label: string; statuses?: OrderStatus[] }[] = [
+  { key: '', label: 'Todos' },
+  { key: 'pago', label: 'Por cobrar', statuses: ['PENDING_PAYMENT', 'PAYMENT_REVIEW'] },
+  { key: 'comprar', label: 'Listos para comprar', statuses: ['READY_TO_BUY', 'PARTIALLY_PURCHASED'] },
+  { key: 'bodega', label: 'Comprados / recibidos', statuses: ['PURCHASED', 'RECEIVED'] },
+  { key: 'cancelados', label: 'Cancelados', statuses: ['CANCELLED'] },
+];
+
 export default async function PedidosPage({ searchParams }: Props) {
-  const { status: statusParam, clientId: clientIdParam } = await searchParams;
-  const activeStatus: OrderStatus | 'ALL' =
-    statusParam && ORDER_STATUSES.includes(statusParam as OrderStatus)
-      ? (statusParam as OrderStatus)
-      : 'ALL';
+  await requireStaff();
+  const { q, estado = '', tipo, clientId } = await searchParams;
+  const tenantId = await getTenantId();
 
-  const tenant = await prisma.tenant.findFirst();
-
-  const filterClient = clientIdParam && tenant
-    ? await prisma.client.findFirst({
-        where: { id: clientIdParam, tenantId: tenant.id },
-        select: { id: true, name: true, code: true },
-      })
-    : null;
-
-  const clients = tenant ? await prisma.client.findMany({
-    where: { tenantId: tenant.id },
-    select: {
-      id: true, name: true, code: true, serviceFeePercent: true, country: true,
-      shippingCategory: { select: { id: true, name: true, rate: true, unit: true } },
-    },
-    orderBy: { name: 'asc' }
-  }) : [];
-
-  const catalog = tenant ? await prisma.productCatalog.findMany({
-    where: { tenantId: tenant.id },
-    select: {
-      name: true,
-      defaultPurchaseValue: true,
-      defaultPurchasedBy: true,
-    },
-    orderBy: [{ timesShipped: 'desc' }, { name: 'asc' }],
-  }) : [];
-
-  const allOrders = tenant ? await prisma.order.findMany({
-    where: {
-      tenantId: tenant.id,
-      ...(filterClient ? { clientId: filterClient.id } : {}),
-    },
-    include: {
-      client: true,
-      box: true,
-      products: true,
-    },
-    orderBy: { orderDate: 'desc' }
-  }) : [];
-
-  const counts: Record<OrderStatus | 'ALL', number> = {
-    ALL: allOrders.length,
-    READY_TO_SHIP: 0,
-    SHIPPED: 0,
-    ARRIVED: 0,
-    DELIVERED: 0,
+  const base: Prisma.OrderWhereInput = {
+    tenantId,
+    clientId: clientId || undefined,
+    type: tipo === 'PERSONAL_SHOPPER' || tipo === 'CART' ? tipo : undefined,
+    OR: q
+      ? [
+          { client: { name: { contains: q, mode: 'insensitive' } } },
+          { client: { code: { contains: q, mode: 'insensitive' } } },
+          ...(Number.isInteger(parseInt(q.replace('#', ''), 10)) ? [{ number: parseInt(q.replace('#', ''), 10) }] : []),
+        ]
+      : undefined,
   };
-  for (const o of allOrders) counts[normalizeOrderStatus(o.status)]++;
+  const tab = TABS.find((t) => t.key === estado) ?? TABS[0];
 
-  const orders = activeStatus === 'ALL'
-    ? allOrders
-    : allOrders.filter(o => normalizeOrderStatus(o.status) === activeStatus);
+  const [orders, grouped, client] = await Promise.all([
+    prisma.order.findMany({
+      where: { ...base, status: tab.statuses ? { in: tab.statuses } : undefined },
+      include: {
+        client: { select: { id: true, name: true, code: true } },
+        invoice: { select: { total: true, paidAmount: true, status: true } },
+        products: { select: { status: true } },
+      },
+      orderBy: { number: 'desc' },
+      take: 200,
+    }),
+    prisma.order.groupBy({ by: ['status'], where: base, _count: true }),
+    clientId ? prisma.client.findUnique({ where: { id: clientId }, select: { name: true } }) : null,
+  ]);
 
-
-  const tabs: Array<{ key: OrderStatus | 'ALL'; label: string; icon?: string }> = [
-    { key: 'ALL', label: 'Todos' },
-    ...ORDER_STATUSES.map((s) => ({ key: s, label: STATUS_SHORT_LABEL_ES[s], icon: STATUS_ICON[s] })),
-  ];
-
-  const buildHref = (key: OrderStatus | 'ALL') => {
-    const params = new URLSearchParams();
-    if (key !== 'ALL') params.set('status', key);
-    if (filterClient) params.set('clientId', filterClient.id);
-    const qs = params.toString();
-    return qs ? `/pedidos?${qs}` : '/pedidos';
+  const countFor = (statuses?: OrderStatus[]) =>
+    grouped.filter((g) => !statuses || statuses.includes(g.status)).reduce((s, g) => s + g._count, 0);
+  const qs = (key: string) => {
+    const p = new URLSearchParams();
+    if (key) p.set('estado', key);
+    if (q) p.set('q', q);
+    if (tipo) p.set('tipo', tipo);
+    if (clientId) p.set('clientId', clientId);
+    const s = p.toString();
+    return `/pedidos${s ? `?${s}` : ''}`;
   };
 
   return (
     <>
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">Pedidos</h1>
-          <p className="page-subtitle">
-            {filterClient ? (
-              <>
-                Historial de <strong>{filterClient.name}</strong> ({filterClient.code})
-              </>
-            ) : (
-              'Lista de pedidos con información de asignación de productos a cajas.'
-            )}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '16px' }}>
-          {filterClient && (
-            <Link href="/pedidos" className="btn btn-secondary">
-              ✕ Quitar filtro
-            </Link>
-          )}
-          <NewOrderModal
-            clients={clients}
-            catalog={catalog}
-            initialClientId={filterClient?.id}
-          />
-        </div>
-      </header>
+      <PageHeader
+        title="Pedidos"
+        subtitle={client ? `Pedidos de ${client.name}` : 'Personal Shopper y Compramos tu carrito. Cada pedido genera una factura en la cuenta del cliente.'}
+        actions={<Link href={`/pedidos/nuevo${clientId ? `?clientId=${clientId}` : ''}`} className="btn">+ Nuevo pedido</Link>}
+      />
 
-      <div className="status-tabs" style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        {tabs.map((tab) => {
-          const isActive = activeStatus === tab.key;
-          const href = buildHref(tab.key);
-          return (
-            <Link
-              key={tab.key}
-              href={href}
-              className={`glass-panel ${isActive ? 'status-tab-active' : ''}`}
-              style={{
-                padding: '10px 18px',
-                textDecoration: 'none',
-                color: isActive ? '#fff' : 'var(--text-color)',
-                background: isActive ? 'var(--accent-color)' : undefined,
-                fontWeight: isActive ? 700 : 500,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '0.95rem',
-                transition: 'all 0.15s',
-                border: isActive ? 'none' : '1px solid rgba(128,128,128,0.15)',
-              }}
-            >
-              {tab.icon && <span>{tab.icon}</span>}
-              <span>{tab.label}</span>
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  minWidth: '22px',
-                  height: '22px',
-                  padding: '0 7px',
-                  borderRadius: '11px',
-                  background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(128,128,128,0.12)',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                }}
-              >
-                {counts[tab.key]}
-              </span>
-            </Link>
-          );
-        })}
-      </div>
+      <Tabs
+        items={TABS.map((t) => ({
+          href: qs(t.key),
+          label: t.label,
+          count: t.key === '' ? undefined : countFor(t.statuses),
+          active: t.key === estado || (!estado && t.key === ''),
+        }))}
+      />
 
       <div className="filter-bar">
-        <div className="input-container" style={{ flex: 1, minWidth: '200px' }}>
-          <label>Buscar Cliente</label>
-          <input type="text" className="input-field" placeholder="Nombre del cliente..." />
-        </div>
-        <div className="input-container">
-          <label>Fecha Inicial</label>
-          <input type="date" className="input-field" />
-        </div>
-        <div className="input-container">
-          <label>Fecha Final</label>
-          <input type="date" className="input-field" />
-        </div>
-        <div style={{ marginTop: 'auto' }}>
-          <button className="btn" style={{ height: '42px', padding: '0 24px' }}>
-            🔍 Aplicar Filtros
-          </button>
-        </div>
+        <SearchFilter placeholder="Cliente, código o n.º de pedido (#012)…" />
+        <SelectFilter
+          label="Servicio"
+          paramName="tipo"
+          allLabel="Todos"
+          options={[
+            { value: 'PERSONAL_SHOPPER', label: 'Personal Shopper' },
+            { value: 'CART', label: 'Compramos tu carrito' },
+          ]}
+        />
+        {clientId && <Link href="/pedidos" className="link small">✕ Quitar filtro de cliente</Link>}
       </div>
 
-      <div className="glass-panel table-container">
-        <table className="data-table">
+      <div className="glass-panel static table-container">
+        <table className="data-table compact">
           <thead>
             <tr>
+              <th>PEDIDO</th>
               <th>CLIENTE</th>
-              <th>PEDIDO / PAÍS</th>
-              <th>FECHA ⬇</th>
-              <th>ESTADO</th>
+              <th>SERVICIO</th>
+              <th>FECHA</th>
               <th>PRODUCTOS</th>
-              <th>PESO</th>
-              <th>CAJA</th>
-              <th>TOTAL / BALANCE</th>
-              <th>ACCIONES</th>
+              <th className="text-right">TOTAL</th>
+              <th className="text-right">PENDIENTE</th>
+              <th>ESTADO</th>
+              <th />
             </tr>
           </thead>
           <tbody>
-            {orders.map((order) => (
-              <tr key={order.id}>
-                <td>
-                  <Link href={`/clientes/${order.client.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                    <strong>{order.client.name}</strong>
-                  </Link>
-                  <br/>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{order.client.code}</span>
-                </td>
-                <td>
-                  <Link href={`/pedidos/${order.id}`} style={{ color: 'var(--accent-color)', textDecoration: 'none', fontWeight: 600 }}>
-                    ID Pedido: {order.id.slice(-4).toUpperCase()}
-                  </Link>
-                  <br/>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>País: {order.client.country.slice(0, 2).toUpperCase()}</span>
-                </td>
-                <td>{new Date(order.orderDate).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}</td>
-                <td>
-                  <span className={`badge ${statusBadgeClass(order.status)}`}>
-                    {statusLabel(order.status)}
-                  </span>
-                  {order.receivedStatus === 'NOVEDAD' && (
-                    <span className="badge badge-danger" title={order.receivedNote ?? undefined} style={{ marginLeft: '6px' }}>
-                      ⚠️ Novedad
-                    </span>
-                  )}
-                </td>
-                <td>{order.products.length} prod.</td>
-                <td style={{ whiteSpace: 'nowrap' }}>
-                  {order.weight.toFixed(2)} lbs
-                </td>
-                <td>
-                  {(() => {
-                    const boxedCount = order.products.filter((p) => p.boxId).length;
-                    if (order.box) {
-                      return <span style={{ color: 'var(--accent-color)', fontWeight: 600 }}>📦 {order.box.internalId}</span>;
-                    }
-                    if (boxedCount > 0) {
-                      return (
-                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>
-                          📦 Parcial ({boxedCount}/{order.products.length})
-                        </span>
-                      );
-                    }
-                    return <span style={{ color: 'var(--text-muted)' }}>Sin caja</span>;
-                  })()}
-                </td>
-                <td>
-                  <strong>${order.totalAmount.toFixed(2)}</strong><br/>
-                  <span style={{ fontSize: '0.8rem', color: order.balance > 0 ? '#ef4444' : '#10b981' }}>
-                    Bal: ${order.balance.toFixed(2)}
-                  </span>
-                </td>
-                <td>
-                  <OrderActionsCell
-                    orderId={order.id}
-                    currentBoxId={order.boxId}
-                    hasBoxedProduct={order.products.some((p) => p.boxId)}
-                    currentStatus={order.status}
-                    balance={order.balance}
-                  />
-                </td>
-              </tr>
-            ))}
-            {orders.length === 0 && (
-              <tr>
-                <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                  No se encontraron pedidos en este estado.
-                </td>
-              </tr>
-            )}
+            {orders.map((o) => {
+              const live = o.products.filter((p) => p.status !== 'CANCELLED');
+              const purchased = live.filter((p) => ['PURCHASED', 'RECEIVED', 'IN_TRANSIT', 'READY_FOR_PICKUP', 'DELIVERED'].includes(p.status)).length;
+              const due = invoiceBalanceOf(o.invoice);
+              return (
+                <tr key={o.id}>
+                  <td><Link href={`/pedidos/${o.id}`} className="link mono strong">{orderCode(o.number)}</Link></td>
+                  <td>
+                    <Link href={`/clientes/${o.client.id}`} className="link">{o.client.name}</Link>
+                    <div className="muted small mono">{o.client.code}</div>
+                  </td>
+                  <td>{ORDER_TYPE[o.type].icon} {ORDER_TYPE[o.type].short}</td>
+                  <td className="nowrap">{shortDate(o.orderDate)}</td>
+                  <td>{purchased}/{live.length} comprados</td>
+                  <td className="text-right">{money(o.totalAmount)}</td>
+                  <td className="text-right">{o.cancelledAt ? <span className="muted">—</span> : due > 0.004 ? <span className="money-due">{money(due)}</span> : <span className="money-ok">Pagado</span>}</td>
+                  <td><StatusBadge meta={ORDER_STATUS[o.status]} small /></td>
+                  <td><Link href={`/pedidos/${o.id}`} className="btn btn-secondary btn-sm">Ver</Link></td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
+        {orders.length === 0 && <Empty icon="🛒" title="No hay pedidos en esta vista">Crea un pedido o cambia los filtros.</Empty>}
       </div>
     </>
   );

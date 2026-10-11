@@ -1,120 +1,92 @@
+import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { requirePortalClient } from '@/lib/auth';
+import { getClientAccount, getStatement } from '@/lib/accounting';
+import { getSettings } from '@/lib/tenant';
+import { INVOICE_STATUS, INVOICE_TYPE } from '@/lib/domain/flow';
+import { invoiceCode } from '@/lib/logistics';
+import { Empty, Kpi, KpiGrid, Panel, StatusBadge, money, shortDate } from '@/components/ui/kit';
+import { TransferButton } from '../PortalControls';
 
 export const dynamic = 'force-dynamic';
 
-export default async function PortalEstadoDeCuentaPage() {
-  const currentClient = await requirePortalClient();
-
-  const client = await prisma.client.findUnique({
-    where: { id: currentClient.id },
-    include: {
-      orders: { include: { products: true }, orderBy: { orderDate: 'asc' } },
-      adjustments: { orderBy: { date: 'asc' } },
-    },
-  });
-
-  if (!client) return null;
-
-  type LedgerEntry = {
-    date: Date;
-    ref: string;
-    description: string;
-    cargo: number;
-    abono: number;
-    kind: 'order' | 'adjustment';
-    isPaid?: boolean;
-  };
-
-  const entries: LedgerEntry[] = [
-    ...client.orders.map(o => ({
-      date: new Date(o.orderDate),
-      ref: `#${o.id.slice(-6).toUpperCase()}`,
-      description: o.products.map(p => p.name).join(', ') || '—',
-      cargo: o.totalAmount,
-      abono: o.totalAmount - o.balance,
-      kind: 'order' as const,
-      isPaid: o.balance === 0,
-    })),
-    ...client.adjustments.map(a => ({
-      date: new Date(a.date),
-      ref: '—',
-      description: a.description,
-      cargo: a.type === 'CARGO' ? a.amount : 0,
-      abono: a.type === 'CREDITO' ? a.amount : 0,
-      kind: 'adjustment' as const,
-    })),
-  ].sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  let running = 0;
-  const ledger = entries.map(e => {
-    running += e.cargo - e.abono;
-    return { ...e, saldo: running };
-  });
-
-  const netBalance = running;
+/** Todo lo que el cliente pregunta por WhatsApp: cuánto debo, cuánto abonaré, qué incluye mi saldo (7.14 / 7.15). */
+export default async function PortalEstadoDeCuenta() {
+  const me = await requirePortalClient();
+  const settings = await getSettings();
+  const [account, rows, invoices] = await Promise.all([
+    getClientAccount(prisma, me.id),
+    getStatement(prisma, me.id),
+    prisma.invoice.findMany({ where: { clientId: me.id, status: { not: 'CANCELLED' } }, orderBy: [{ issueDate: 'desc' }, { number: 'desc' }] }),
+  ]);
+  const open = invoices.filter((i) => i.status === 'PENDING' || i.status === 'PARTIAL').reverse();
 
   return (
-    <div style={{ padding: '32px' }}>
-      <h1 className="page-title" style={{ marginBottom: '4px' }}>Estado de Cuenta</h1>
-      <p className="page-subtitle" style={{ marginBottom: '24px' }}>{client.name} — Código: <strong>{client.code}</strong></p>
-
-      <div className="glass-panel" style={{
-        padding: '28px 32px', marginBottom: '24px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        borderLeft: `6px solid ${netBalance > 0 ? '#ef4444' : netBalance < 0 ? '#10b981' : '#6366f1'}`,
-      }}>
+    <div style={{ padding: 32 }}>
+      <div className="row-between" style={{ marginBottom: 20 }}>
         <div>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
-            Saldo Neto
-          </div>
-          <div style={{ fontSize: '2.4rem', fontWeight: 800, color: netBalance > 0 ? '#ef4444' : netBalance < 0 ? '#10b981' : 'var(--text-primary)', lineHeight: 1 }}>
-            ${Math.abs(netBalance).toFixed(2)}
-          </div>
+          <h1 className="page-title" style={{ marginBottom: 4 }}>Estado de cuenta</h1>
+          <p className="page-subtitle">Tus cargos, pagos y saldo.</p>
         </div>
-        <div>
-          {netBalance > 0 && <div style={{ padding: '12px 20px', borderRadius: '12px', background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontWeight: 700 }}>Debes ${netBalance.toFixed(2)}</div>}
-          {netBalance < 0 && <div style={{ padding: '12px 20px', borderRadius: '12px', background: 'rgba(16,185,129,0.1)', color: '#10b981', fontWeight: 700 }}>Tienes un crédito de ${Math.abs(netBalance).toFixed(2)}</div>}
-          {netBalance === 0 && <div style={{ padding: '12px 20px', borderRadius: '12px', background: 'rgba(99,102,241,0.1)', color: '#6366f1', fontWeight: 700 }}>✓ Cuenta al día</div>}
-        </div>
+        <TransferButton
+          invoices={open.map((i) => ({ id: i.id, label: i.description ?? INVOICE_TYPE[i.type], balance: i.total - i.paidAmount }))}
+          defaultAmount={account.pending > 0.004 ? account.pending : undefined}
+          instructions={settings.paymentInstructions}
+        />
       </div>
 
-      <div className="glass-panel table-container">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>FECHA</th>
-              <th>PEDIDO #</th>
-              <th>DESCRIPCIÓN</th>
-              <th>ESTADO</th>
-              <th style={{ textAlign: 'right' }}>CARGO</th>
-              <th style={{ textAlign: 'right' }}>ABONO</th>
-              <th style={{ textAlign: 'right' }}>SALDO</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ledger.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>No hay movimientos registrados todavía.</td></tr>
-            )}
-            {ledger.map((entry, i) => (
-              <tr key={i}>
-                <td style={{ whiteSpace: 'nowrap', fontSize: '0.9rem' }}>{entry.date.toLocaleDateString('es-ES')}</td>
-                <td style={{ fontFamily: 'monospace', fontWeight: 700 }}>{entry.ref}</td>
-                <td style={{ maxWidth: '200px' }}>{entry.description}</td>
-                <td>
-                  {entry.kind === 'order' ? (
-                    <span className={`badge ${entry.isPaid ? 'badge-success' : 'badge-warning'}`}>{entry.isPaid ? '✓ Pagado' : '⏳ Pendiente'}</span>
-                  ) : (
-                    <span className="badge badge-secondary" style={{ fontSize: '0.72rem' }}>Ajuste</span>
-                  )}
-                </td>
-                <td style={{ textAlign: 'right', fontWeight: 600, color: entry.cargo > 0 ? '#ef4444' : 'var(--text-muted)' }}>{entry.cargo > 0 ? `$${entry.cargo.toFixed(2)}` : '—'}</td>
-                <td style={{ textAlign: 'right', fontWeight: 600, color: entry.abono > 0 ? '#10b981' : 'var(--text-muted)' }}>{entry.abono > 0 ? `$${entry.abono.toFixed(2)}` : '—'}</td>
-                <td style={{ textAlign: 'right', fontWeight: 700, color: entry.saldo > 0 ? '#ef4444' : entry.saldo < 0 ? '#10b981' : '#6366f1' }}>${Math.abs(entry.saldo).toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <KpiGrid>
+        <Kpi label="Saldo pendiente" value={money(account.pending)} tone={account.pending > 0.004 ? 'danger' : 'success'} />
+        <Kpi label="Saldo a favor" value={money(account.credit)} tone={account.credit > 0.004 ? 'success' : undefined} hint="Se aplica solo a tu próximo cargo" />
+        <Kpi label="Total pagado" value={money(account.paid)} />
+      </KpiGrid>
+
+      <div className="stack">
+        <Panel title="Mis facturas" flush>
+          {invoices.length === 0 ? <Empty icon="🧾" title="Sin facturas" /> : (
+            <div className="table-container" style={{ padding: '0 16px 16px' }}>
+              <table className="data-table compact">
+                <thead><tr><th>FACTURA</th><th>FECHA</th><th>CONCEPTO</th><th>ESTADO</th><th className="text-right">TOTAL</th><th className="text-right">SALDO</th></tr></thead>
+                <tbody>
+                  {invoices.map((i) => (
+                    <tr key={i.id}>
+                      <td className="mono strong">{invoiceCode(i.number)}</td>
+                      <td>{shortDate(i.issueDate)}</td>
+                      <td>{i.description ?? INVOICE_TYPE[i.type]}</td>
+                      <td><StatusBadge meta={INVOICE_STATUS[i.status]} small /></td>
+                      <td className="text-right">{money(i.total)}</td>
+                      <td className="text-right">{i.total - i.paidAmount > 0.004 ? <span className="money-due">{money(i.total - i.paidAmount)}</span> : <span className="money-ok">$0.00</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="Movimientos" subtitle="Positivo = debes · negativo = saldo a favor." flush>
+          {rows.length === 0 ? <Empty icon="📋" title="Todavía no hay movimientos" /> : (
+            <div className="table-container" style={{ padding: '0 16px 16px' }}>
+              <table className="data-table compact">
+                <thead><tr><th>FECHA</th><th>MOVIMIENTO</th><th className="text-right">CARGO</th><th className="text-right">PAGO</th><th className="text-right">SALDO</th></tr></thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.key} style={r.informational ? { opacity: 0.55 } : undefined}>
+                      <td className="nowrap">{shortDate(r.date)}</td>
+                      <td>
+                        {r.href ? <Link href={r.href} className="link">{r.description}</Link> : r.description}
+                        {r.statusLabel && ['Por verificar', 'Rechazado', 'Anulado', 'Anulada'].includes(r.statusLabel) && <span className="muted small"> · {r.statusLabel}</span>}
+                      </td>
+                      <td className="text-right">{r.charge > 0 ? money(r.charge) : '—'}</td>
+                      <td className="text-right" style={{ color: r.credit > 0 ? '#10b981' : undefined }}>{r.credit > 0 ? money(r.credit) : '—'}</td>
+                      <td className="text-right strong">{r.informational ? '' : `${money(Math.abs(r.balance))}${r.balance < -0.004 ? ' a favor' : ''}`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
       </div>
     </div>
   );

@@ -1,95 +1,50 @@
 'use server';
 
+import { safe } from '@/lib/action';
 import prisma from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
-
-export type PurchasedByValue = 'CLIENT' | 'SHOPUSA';
+import { requireStaff } from '@/lib/auth';
+import { getTenantId } from '@/lib/tenant';
 
 export interface CatalogInput {
   name: string;
   defaultPurchaseValue?: number | null;
-  defaultPurchasedBy?: PurchasedByValue;
   notes?: string | null;
 }
 
-export async function createCatalogEntry(input: CatalogInput) {
+export const createCatalogEntry = safe(async function createCatalogEntry(input: CatalogInput) {
+  await requireStaff();
   const name = input.name?.trim();
   if (!name) throw new Error('El nombre es requerido');
-
-  const tenant = await prisma.tenant.findFirst();
-  if (!tenant) throw new Error('No tenant found');
+  const tenantId = await getTenantId();
 
   await prisma.productCatalog.create({
-    data: {
-      tenantId: tenant.id,
-      name,
-      defaultPurchaseValue: input.defaultPurchaseValue ?? null,
-      defaultPurchasedBy: input.defaultPurchasedBy ?? 'CLIENT',
-      notes: input.notes ?? null,
-    },
+    data: { tenantId, name, defaultPurchaseValue: input.defaultPurchaseValue ?? null, notes: input.notes ?? null },
   });
 
   revalidatePath('/productos');
-  revalidatePath('/pedidos');
   return { success: true };
-}
+});
 
-export async function updateCatalogEntry(id: string, input: CatalogInput) {
+export const updateCatalogEntry = safe(async function updateCatalogEntry(id: string, input: CatalogInput) {
+  await requireStaff();
   if (!id) throw new Error('Id required');
   const name = input.name?.trim();
   if (!name) throw new Error('El nombre es requerido');
 
   await prisma.productCatalog.update({
     where: { id },
-    data: {
-      name,
-      defaultPurchaseValue: input.defaultPurchaseValue ?? null,
-      defaultPurchasedBy: input.defaultPurchasedBy ?? 'CLIENT',
-      notes: input.notes ?? null,
-    },
+    data: { name, defaultPurchaseValue: input.defaultPurchaseValue ?? null, notes: input.notes ?? null },
   });
 
   revalidatePath('/productos');
-  revalidatePath('/pedidos');
   return { success: true };
-}
+});
 
-export async function deleteCatalogEntry(id: string) {
+export const deleteCatalogEntry = safe(async function deleteCatalogEntry(id: string) {
+  await requireStaff();
   if (!id) throw new Error('Id required');
   await prisma.productCatalog.delete({ where: { id } });
   revalidatePath('/productos');
   return { success: true };
-}
-
-/**
- * Called from createOrder for each product. Idempotent — upserts by (tenantId, name).
- * On existing entries we only bump usage stats; we don't overwrite manual edits to defaults.
- */
-export async function recordCatalogUsage(
-  tenantId: string,
-  product: {
-    name: string;
-    purchasedBy: PurchasedByValue;
-    purchaseValue?: number | null;
-  },
-) {
-  const name = product.name?.trim();
-  if (!name) return;
-
-  const now = new Date();
-  await prisma.productCatalog.upsert({
-    where: { tenantId_name: { tenantId, name } },
-    create: {
-      tenantId,
-      name,
-      defaultPurchaseValue: product.purchaseValue ?? null,
-      defaultPurchasedBy: product.purchasedBy,
-      timesShipped: 1,
-      lastUsedAt: now,
-    },
-    update: {
-      timesShipped: { increment: 1 },
-      lastUsedAt: now,
-    },
-  });
-}
+});

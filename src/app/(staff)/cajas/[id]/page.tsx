@@ -1,250 +1,131 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import prisma from '@/lib/prisma';
-import BoxStatusActions from '../BoxStatusActions';
-import OrderReceivingControl from '../OrderReceivingControl';
-import NotifyClientsButton from '../NotifyClientsButton';
-import EditBoxWeightButton from './EditBoxWeightButton';
-import { normalizeOrderStatus, statusBadgeClass, statusLabel } from '@/lib/orderStatus';
+import { requireStaff } from '@/lib/auth';
+import { PKG_STATUS, isDispatchAuthorized } from '@/lib/domain/flow';
+import { dispatchCode, getCountryRuleMap, invoiceBalanceOf, pkgCode } from '@/lib/logistics';
+import { Alert, Empty, Kpi, KpiGrid, PageHeader, Panel, StatusBadge, qty } from '@/components/ui/kit';
+import Thumb from '@/components/ui/Thumb';
+import PrintButton from '../../clientes/[id]/estado-de-cuenta/PrintButton';
+import { PkgInfoForm, PkgItemActions, PkgPool, PkgStateButtons, PkgStatusControl, type PoolGroup } from '../PkgControls';
 
-interface Props {
-  params: Promise<{ id: string }>;
-}
+export const dynamic = 'force-dynamic';
 
-export default async function BoxDetailPage({ params }: Props) {
+export default async function PkgDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaff();
   const { id } = await params;
 
-  const box = await prisma.box.findUnique({
+  const pkg = await prisma.pkg.findUnique({
     where: { id },
     include: {
+      dispatch: true,
       products: {
-        include: {
-          order: { include: { client: true } },
-        },
+        where: { status: { not: 'CANCELLED' } },
+        include: { client: { select: { id: true, name: true, code: true } } },
+        orderBy: [{ client: { name: 'asc' } }, { createdAt: 'asc' }],
       },
     },
   });
+  if (!pkg) notFound();
 
-  if (!box) notFound();
+  const editable = pkg.status === 'IN_PREPARATION';
+  const { ruleFor } = await getCountryRuleMap();
 
-  // A box's real contents are its products (an order can be split across
-  // boxes), so orders are derived from the products physically in this box —
-  // not from Order.boxId, which only reflects orders fully packed in one box.
-  type BoxOrder = typeof box.products[number]['order'] & { products: typeof box.products };
-  const ordersById = new Map<string, BoxOrder>();
-  for (const p of box.products) {
-    if (!ordersById.has(p.orderId)) {
-      ordersById.set(p.orderId, { ...p.order, products: [] });
-    }
-    ordersById.get(p.orderId)!.products.push(p);
+  const [poolProducts, others] = await Promise.all([
+    editable
+      ? prisma.product.findMany({
+          where: { tenantId: pkg.tenantId, status: 'RECEIVED', pkgId: null, consolidation: { status: 'CLOSED' }, client: { country: pkg.country } },
+          include: { client: { select: { id: true, name: true, code: true } }, consolidation: { select: { invoice: { select: { total: true, paidAmount: true, status: true } } } } },
+          orderBy: [{ client: { name: 'asc' } }, { createdAt: 'asc' }],
+        })
+      : Promise.resolve([]),
+    editable ? prisma.pkg.findMany({ where: { tenantId: pkg.tenantId, status: 'IN_PREPARATION', country: pkg.country, id: { not: id } }, orderBy: { number: 'asc' } }) : Promise.resolve([]),
+  ]);
+
+  const rule = ruleFor(pkg.country);
+  const poolMap = new Map<string, PoolGroup>();
+  for (const p of poolProducts) {
+    const balance = invoiceBalanceOf(p.consolidation?.invoice);
+    if (!poolMap.has(p.client.id)) poolMap.set(p.client.id, { clientId: p.client.id, clientName: p.client.name, clientCode: p.client.code, items: [] });
+    poolMap.get(p.client.id)!.items.push({ id: p.id, name: p.name, quantity: p.quantity, imageUrl: p.imageUrl, authorized: isDispatchAuthorized(balance, rule), balance });
   }
-  const boxOrders = Array.from(ordersById.values());
 
-  const ordersByClient = new Map<string, { client: BoxOrder['client']; orders: BoxOrder[] }>();
-  for (const o of boxOrders) {
-    if (!ordersByClient.has(o.clientId)) {
-      ordersByClient.set(o.clientId, { client: o.client, orders: [] });
-    }
-    ordersByClient.get(o.clientId)!.orders.push(o);
+  const byClient = new Map<string, { name: string; code: string; id: string; items: typeof pkg.products }>();
+  for (const p of pkg.products) {
+    if (!byClient.has(p.client.id)) byClient.set(p.client.id, { id: p.client.id, name: p.client.name, code: p.client.code, items: [] });
+    byClient.get(p.client.id)!.items.push(p);
   }
-
-  const totalProducts = box.products.length;
-  const totalValue = boxOrders.reduce((s, o) => s + o.totalAmount, 0);
-  const totalBalance = boxOrders.reduce((s, o) => s + o.balance, 0);
-  const allDelivered = boxOrders.length > 0 && boxOrders.every(o => normalizeOrderStatus(o.status) === 'DELIVERED');
-  const anyArrived = boxOrders.some(o => normalizeOrderStatus(o.status) === 'ARRIVED');
-
-  const receivedOkCount = boxOrders.filter(o => o.receivedStatus === 'OK').length;
-  const novedadCount = boxOrders.filter(o => o.receivedStatus === 'NOVEDAD').length;
-  const reviewedCount = receivedOkCount + novedadCount;
-
-  const boxStatusLabel = box.status === 'DELIVERED' ? 'Entregada' : anyArrived ? 'Llegó al país' : 'En Tránsito';
-  const boxStatusBadge = box.status === 'DELIVERED' ? 'badge-success' : anyArrived ? 'badge-info' : 'badge-warning';
+  const totalUnits = pkg.products.reduce((s, p) => s + p.quantity, 0);
 
   return (
     <>
-      <header className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <Link href="/cajas" className="btn btn-secondary" style={{ padding: '8px 12px' }}>
-            &larr; Cajas
-          </Link>
-          <div>
-            <h1 className="page-title">Caja {box.internalId}</h1>
-            <p className="page-subtitle">
-              {box.size} · {box.country} · Creada {new Date(box.createdAt).toLocaleDateString('es-ES')}
-            </p>
-          </div>
-        </div>
-        <span className={`badge ${boxStatusBadge}`} style={{ fontSize: '0.9rem', padding: '8px 16px' }}>
-          {boxStatusLabel}
-        </span>
-      </header>
+      <PageHeader
+        back={{ href: '/cajas', label: 'Cajas (PKG)' }}
+        title={pkgCode(pkg.number)}
+        badges={<StatusBadge meta={PKG_STATUS[pkg.status]} />}
+        subtitle={`Destino ${pkg.country}${pkg.dispatch ? ` · ${dispatchCode(pkg.dispatch.number)}` : ''}`}
+        actions={
+          <>
+            <PkgStateButtons pkgId={pkg.id} status={pkg.status} canClose={pkg.products.length > 0} hasDispatch={!!pkg.dispatch} />
+            <PrintButton />
+          </>
+        }
+      />
 
-      <div className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', marginBottom: '24px' }}>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Pedidos</div>
-          <div className="stat-value" style={{ fontSize: '1.8rem' }}>{boxOrders.length}</div>
+      <KpiGrid>
+        <Kpi label="Total de unidades" value={totalUnits} hint="Referencia para la declaración aduanera" />
+        <Kpi label="Productos" value={pkg.products.length} />
+        <Kpi label="Clientes en la caja" value={byClient.size} />
+        <Kpi label="Despacho" value={pkg.dispatch ? dispatchCode(pkg.dispatch.number) : '—'} href={pkg.dispatch ? `/despachos/${pkg.dispatch.id}` : undefined} hint={pkg.dispatch ? (pkg.dispatch.status === 'CONFIRMED' ? 'Confirmado' : 'Borrador') : 'Aún sin despacho'} />
+      </KpiGrid>
+
+      {editable && <Alert tone="info">PKG <strong>en preparación</strong>: agrega, retira o mueve productos. El sistema no decide cómo empacar; registra lo que tú decides. Un producto solo pasa a “en tránsito” cuando el despacho se confirma.</Alert>}
+
+      <div className="page-grid">
+        <div className="stack">
+          <Panel title="Contenido de la caja" subtitle="Agrupado por cliente. Esta vista sirve de referencia para la declaración aduanera externa." flush>
+            <div style={{ padding: '0 18px 18px' }}>
+              {byClient.size === 0 ? (
+                <Empty icon="📦" title="El PKG está vacío">{editable ? 'Selecciona productos en la lista de pendientes.' : undefined}</Empty>
+              ) : (
+                Array.from(byClient.values()).map((g) => (
+                  <div key={g.id} className="group-card">
+                    <div className="group-head">
+                      <div className="row"><Link href={`/clientes/${g.id}`} className="strong" style={{ color: 'inherit', textDecoration: 'none' }}>{g.name}</Link><span className="badge badge-accent mono badge-sm">{g.code}</span></div>
+                      <span className="muted small">{g.items.reduce((s, i) => s + i.quantity, 0)} unidad(es)</span>
+                    </div>
+                    {g.items.map((p) => (
+                      <div key={p.id} className="group-row">
+                        <Thumb src={p.imageUrl} alt={p.name} />
+                        <div className="grow strong">{qty(p.name, p.quantity)}</div>
+                        <PkgItemActions productId={p.id} editable={editable} others={others.map((o) => ({ id: o.id, label: pkgCode(o.number) }))} />
+                      </div>
+                    ))}
+                  </div>
+                ))
+              )}
+            </div>
+          </Panel>
+
+          {editable && (
+            <Panel title="Productos pendientes de asignación" subtitle={`Listos para despacho a ${pkg.country} y todavía sin PKG. Los de un cliente con saldo no aparecen seleccionables si el país exige pago previo.`}>
+              <PkgPool pkgId={pkg.id} groups={Array.from(poolMap.values())} />
+            </Panel>
+          )}
         </div>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Clientes</div>
-          <div className="stat-value" style={{ fontSize: '1.8rem' }}>{ordersByClient.size}</div>
-        </div>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Productos</div>
-          <div className="stat-value" style={{ fontSize: '1.8rem' }}>{totalProducts}</div>
-        </div>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div className="stat-title">Peso Total</div>
-            <EditBoxWeightButton boxId={box.id} totalWeight={box.totalWeight ?? 0} />
-          </div>
-          <div className="stat-value" style={{ fontSize: '1.8rem' }}>{(box.totalWeight ?? 0).toFixed(2)} lbs</div>
-        </div>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Valor Total</div>
-          <div className="stat-value" style={{ fontSize: '1.5rem' }}>${totalValue.toFixed(2)}</div>
-        </div>
-        <div className="glass-panel stat-card" style={{ padding: '20px' }}>
-          <div className="stat-title">Balance Pendiente</div>
-          <div className="stat-value" style={{ fontSize: '1.5rem', color: totalBalance > 0 ? '#ef4444' : '#10b981' }}>
-            ${totalBalance.toFixed(2)}
-          </div>
+
+        <div className="stack">
+          <Panel title="Datos del PKG">
+            <PkgInfoForm pkgId={pkg.id} number={pkg.number} trackingNumber={pkg.trackingNumber} carrier={pkg.carrier} notes={pkg.notes} numberEditable={editable} />
+          </Panel>
+          {pkg.dispatch?.status === 'CONFIRMED' && (
+            <Panel title="Seguimiento">
+              <PkgStatusControl pkgId={pkg.id} status={pkg.status} />
+              <p className="muted small" style={{ marginTop: 10 }}>El cliente solo ve: En bodega → En tránsito → Listo para retirar → Entregado. No ve PKG ni guías.</p>
+            </Panel>
+          )}
         </div>
       </div>
-
-      <div className="glass-panel" style={{ padding: '20px 24px', marginBottom: '24px' }}>
-        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Acciones de caja
-        </div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <BoxStatusActions
-            boxId={box.id}
-            boxStatus={box.status}
-            hasOrders={boxOrders.length > 0}
-            allDelivered={allDelivered}
-            anyArrived={anyArrived}
-          />
-          {anyArrived && <NotifyClientsButton boxId={box.id} />}
-        </div>
-        {anyArrived && boxOrders.length > 0 && (
-          <div style={{ marginTop: '12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            📥 Recepción: {reviewedCount}/{boxOrders.length} confirmados
-            {novedadCount > 0 && (
-              <span style={{ color: '#ef4444', fontWeight: 600, marginLeft: '8px' }}>
-                ⚠️ {novedadCount} pedido(s) con novedad sin resolver
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {ordersByClient.size === 0 ? (
-        <div className="glass-panel" style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)' }}>
-          Esta caja aún no tiene pedidos asignados.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {Array.from(ordersByClient.values()).map(({ client, orders }) => {
-            const clientWeight = orders.reduce((s, o) => s + o.weight, 0);
-            const clientTotal = orders.reduce((s, o) => s + o.totalAmount, 0);
-            const clientBalance = orders.reduce((s, o) => s + o.balance, 0);
-
-            return (
-              <div key={client.id} className="glass-panel" style={{ padding: '24px 28px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-                  <div>
-                    <Link
-                      href={`/clientes/${client.id}`}
-                      style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent-color)', textDecoration: 'none' }}
-                    >
-                      👤 {client.name}
-                    </Link>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                      {client.code} · {client.city}, {client.country} · {client.phone}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '20px', fontSize: '0.85rem' }}>
-                    <div>
-                      <div style={{ color: 'var(--text-muted)' }}>Peso</div>
-                      <strong>{clientWeight.toFixed(2)} lbs</strong>
-                    </div>
-                    <div>
-                      <div style={{ color: 'var(--text-muted)' }}>Total</div>
-                      <strong>${clientTotal.toFixed(2)}</strong>
-                    </div>
-                    <div>
-                      <div style={{ color: 'var(--text-muted)' }}>Balance</div>
-                      <strong style={{ color: clientBalance > 0 ? '#ef4444' : '#10b981' }}>
-                        ${clientBalance.toFixed(2)}
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-
-                {orders.map((order) => (
-                  <div key={order.id} style={{ marginBottom: '16px', padding: '16px', borderRadius: '12px', background: 'rgba(128,128,128,0.05)', border: '1px solid rgba(128,128,128,0.08)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px', flexWrap: 'wrap' }}>
-                      <Link
-                        href={`/pedidos/${order.id}`}
-                        style={{ color: 'var(--accent-color)', textDecoration: 'none', fontWeight: 600, fontSize: '0.95rem' }}
-                      >
-                        Pedido #{order.id.slice(-6).toUpperCase()}
-                      </Link>
-                      <span className={`badge ${statusBadgeClass(order.status)}`}>
-                        {statusLabel(order.status)}
-                      </span>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        {new Date(order.orderDate).toLocaleDateString('es-ES')} · {order.weight.toFixed(2)} lbs · Envío ${order.shippingCost.toFixed(2)}
-                      </span>
-                    </div>
-
-                    {anyArrived && (
-                      <OrderReceivingControl
-                        orderId={order.id}
-                        receivedStatus={order.receivedStatus}
-                        receivedNote={order.receivedNote}
-                      />
-                    )}
-
-                    {order.products.length > 0 ? (
-                      <div className="table-container">
-                        <table className="data-table" style={{ fontSize: '0.85rem' }}>
-                          <thead>
-                            <tr>
-                              <th>PRODUCTO</th>
-                              <th>COMPRADO POR</th>
-                              <th style={{ textAlign: 'right' }}>VALOR</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {order.products.map((p) => (
-                              <tr key={p.id}>
-                                <td style={{ fontWeight: 600 }}>{p.name}</td>
-                                <td>
-                                  <span className={`badge ${p.purchasedBy === 'SHOPUSA' ? 'badge-warning' : 'badge-secondary'}`} style={{ fontSize: '0.7rem' }}>
-                                    {p.purchasedBy === 'SHOPUSA' ? '🏪 ShopUSA' : '👤 Cliente'}
-                                  </span>
-                                </td>
-                                <td style={{ textAlign: 'right' }}>
-                                  {p.purchaseValue != null ? `$${p.purchaseValue.toFixed(2)}` : '—'}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <div style={{ padding: '12px', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
-                        Sin productos registrados.
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-        </div>
-      )}
     </>
   );
 }

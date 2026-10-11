@@ -13,13 +13,18 @@ export default function NewUserForm() {
     e.preventDefault();
     setIsPending(true);
     setError(null);
-    const formData = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const formData = new FormData(form);
     try {
-      await createStaffUser(formData);
+      const result = await createStaffUser(formData);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       setIsOpen(false);
-      (e.target as HTMLFormElement).reset();
-    } catch (err: any) {
-      setError(err.message || 'Error al crear usuario');
+      form.reset();
+    } catch {
+      setError('Error al crear usuario');
     } finally {
       setIsPending(false);
     }

@@ -1,163 +1,156 @@
-import prisma from '@/lib/prisma';
-import NewClientModal from './NewClientModal';
 import Link from 'next/link';
+import prisma from '@/lib/prisma';
+import { requireStaff } from '@/lib/auth';
+import { getAccountsByClient } from '@/lib/accounting';
+import { getCountryRules, getSettings, getTenantId } from '@/lib/tenant';
 import SearchFilter from '@/components/SearchFilter';
 import SelectFilter from '@/components/SelectFilter';
+import { Empty, PageHeader, ToneBadge, money } from '@/components/ui/kit';
+import NewClientModal from './NewClientModal';
 
-interface ClientesPageProps {
-  searchParams: Promise<{ q?: string; estado?: string; pais?: string }>;
+export const dynamic = 'force-dynamic';
+
+interface Props {
+  searchParams: Promise<{ q?: string; saldo?: string; pais?: string; custodio?: string }>;
 }
 
-export default async function ClientesPage({ searchParams }: ClientesPageProps) {
-  const { q, estado, pais } = await searchParams;
+export default async function ClientesPage({ searchParams }: Props) {
+  await requireStaff();
+  const { q, saldo, pais, custodio } = await searchParams;
+  const tenantId = await getTenantId();
 
-  // Get the first tenant for now
-  const tenant = await prisma.tenant.findFirst();
+  const [allClients, categories, rules, settings, benefits] = await Promise.all([
+    prisma.client.findMany({
+      where: {
+        tenantId,
+        country: pais || undefined,
+        custodyActive: custodio ? true : undefined,
+        OR: q
+          ? [
+              { name: { contains: q, mode: 'insensitive' } },
+              { code: { contains: q, mode: 'insensitive' } },
+              { idNumber: { contains: q, mode: 'insensitive' } },
+              { email: { contains: q, mode: 'insensitive' } },
+              { phone: { contains: q, mode: 'insensitive' } },
+            ]
+          : undefined,
+      },
+      include: { shippingCategory: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.shippingCategory.findMany({ where: { tenantId }, orderBy: [{ country: 'asc' }, { name: 'asc' }] }),
+    getCountryRules(),
+    getSettings(),
+    prisma.referralBenefit.groupBy({ by: ['referrerId'], where: { status: 'AVAILABLE' }, _count: true }),
+  ]);
 
-  const allClients = tenant ? await prisma.client.findMany({
-    where: {
-      tenantId: tenant.id,
-      OR: q ? [
-        { name: { contains: q, mode: 'insensitive' } },
-        { code: { contains: q, mode: 'insensitive' } },
-        { idNumber: { contains: q, mode: 'insensitive' } },
-      ] : undefined,
-      country: pais || undefined,
-    },
-    include: {
-      orders: true,
-    },
-    orderBy: { createdAt: 'desc' }
-  }) : [];
+  const accounts = await getAccountsByClient(prisma, allClients.map((c) => c.id));
+  const benefitsBy = new Map(benefits.map((b) => [b.referrerId, b._count]));
 
-  const clients = allClients.filter((client) => {
-    if (!estado) return true;
-    const totalBalance = client.orders.reduce((sum, o) => sum + o.balance, 0);
-    return estado === 'CON_DEUDA' ? totalBalance > 0 : totalBalance <= 0;
+  const clients = allClients.filter((c) => {
+    const acc = accounts.get(c.id);
+    if (saldo === 'deuda') return (acc?.pending ?? 0) > 0.004;
+    if (saldo === 'favor') return (acc?.credit ?? 0) > 0.004;
+    if (saldo === 'aldia') return (acc?.pending ?? 0) <= 0.004;
+    return true;
   });
 
-  const shippingCategories = tenant ? await prisma.shippingCategory.findMany({
-    where: { tenantId: tenant.id },
-    orderBy: [{ country: 'asc' }, { name: 'asc' }],
-  }) : [];
+  const everyone = await prisma.client.findMany({
+    where: { tenantId },
+    select: { id: true, name: true, code: true, country: true },
+    orderBy: { name: 'asc' },
+  });
+  const activeCountries = rules.filter((r) => r.active).map((r) => r.name);
+  const filtered = !!(q || saldo || pais || custodio);
 
   return (
     <>
-      <header className="page-header">
-        <div>
-          <h1 className="page-title">Clientes</h1>
-          <p className="page-subtitle">Lista de todos los clientes incluyendo su información de contacto y resumen de pedidos.</p>
-        </div>
-        <div style={{ display: 'flex', gap: '16px' }}>
-          <NewClientModal categories={shippingCategories} />
-        </div>
-      </header>
+      <PageHeader
+        title="Clientes"
+        subtitle="Cada cliente tiene su código, su tarifa de envío, su tasa de servicio y su cuenta corriente."
+        actions={
+          <NewClientModal
+            categories={categories.map((c) => ({ id: c.id, name: c.name, country: c.country, pricePerLb: c.pricePerLb, unit: c.unit, active: c.active }))}
+            countries={activeCountries}
+            referrers={everyone}
+            defaultServiceFee={settings.personalShopperRatePercent}
+          />
+        }
+      />
 
       <div className="filter-bar">
-        <SearchFilter placeholder="Nombre, código o ID..." />
+        <SearchFilter placeholder="Nombre, código (EC001), teléfono o correo…" />
         <SelectFilter
-          label="Estado de Pedidos"
-          paramName="estado"
+          label="Cuenta"
+          paramName="saldo"
+          allLabel="Todas"
           options={[
-            { value: 'AL_DIA', label: 'Al Día' },
-            { value: 'CON_DEUDA', label: 'Con Deuda' },
+            { value: 'deuda', label: 'Con saldo pendiente' },
+            { value: 'favor', label: 'Con saldo a favor' },
+            { value: 'aldia', label: 'Al día' },
           ]}
         />
-        <SelectFilter
-          label="País"
-          paramName="pais"
-          allLabel="Todos los Países"
-          options={[
-            { value: 'Ecuador', label: 'Ecuador' },
-            { value: 'Panamá', label: 'Panamá' },
-          ]}
-        />
+        <SelectFilter label="País" paramName="pais" allLabel="Todos" options={activeCountries.map((c) => ({ value: c, label: c }))} />
+        <SelectFilter label="Custodio" paramName="custodio" allLabel="Todos" options={[{ value: '1', label: 'Con custodio activo' }]} />
       </div>
 
-      <div className="glass-panel" style={{ padding: '16px 24px', marginBottom: '24px', borderLeft: '4px solid var(--accent-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <span style={{ fontSize: '1.2rem', marginRight: '8px' }}>ℹ️</span>
-          <span style={{ color: 'var(--text-muted)' }}>
-            {(q || estado || pais) ? 'Mostrando clientes filtrados.' : 'Mostrando todos los clientes registrados.'} <strong>{clients.length} cliente(s) encontrado(s).</strong>
-          </span>
-        </div>
-        {(q || estado || pais) && (
-          <Link href="/clientes" style={{ fontSize: '0.9rem', color: 'var(--accent-color)', fontWeight: 600 }}>
-            ✕ Limpiar Búsqueda
-          </Link>
-        )}
+      <div className="muted small" style={{ margin: '0 0 12px 4px' }}>
+        {clients.length} cliente(s){filtered ? ' con los filtros aplicados' : ''}.{' '}
+        {filtered && <Link href="/clientes" className="link">Limpiar filtros</Link>}
       </div>
 
-      <div className="glass-panel table-container">
-        <table className="data-table">
+      <div className="glass-panel static table-container">
+        <table className="data-table compact">
           <thead>
             <tr>
               <th>CÓDIGO</th>
-              <th>NOMBRE</th>
+              <th>CLIENTE</th>
               <th>PAÍS</th>
-              <th>CIUDAD</th>
-              <th>TELÉFONO</th>
-              <th>ENTREGA</th>
-              <th>PEDIDOS</th>
-              <th>TOTAL</th>
-              <th>PAGADO</th>
-              <th>BALANCE</th>
-              <th>ACCIONES</th>
+              <th>TARIFA ENVÍO</th>
+              <th>SERVICIO</th>
+              <th>BENEFICIOS</th>
+              <th className="text-right">SALDO</th>
+              <th />
             </tr>
           </thead>
           <tbody>
-            {clients.map((client) => {
-              const totalAmount = client.orders.reduce((sum, o) => sum + o.totalAmount, 0);
-              const totalBalance = client.orders.reduce((sum, o) => sum + o.balance, 0);
-              const totalPaid = totalAmount - totalBalance;
-
+            {clients.map((c) => {
+              const acc = accounts.get(c.id) ?? { pending: 0, credit: 0, net: 0 };
+              const nBenefits = benefitsBy.get(c.id) ?? 0;
               return (
-                <tr key={client.id}>
-                  <td>{client.code}</td>
+                <tr key={c.id}>
+                  <td className="mono strong">{c.code}</td>
                   <td>
-                    <Link href={`/clientes/${client.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                      <strong style={{ cursor: 'pointer', borderBottom: '1px dashed var(--accent-color)' }}>
-                        {client.name}
-                      </strong>
-                    </Link>
-                    {client.idNumber && (
-                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>ID: {client.idNumber}</div>
+                    <Link href={`/clientes/${c.id}`} className="link">{c.name}</Link>
+                    <div className="muted small">{c.phone}{c.email ? ` · ${c.email}` : ''}</div>
+                  </td>
+                  <td>{c.country}{c.city ? <span className="muted small"> · {c.city}</span> : null}</td>
+                  <td>{c.shippingCategory?.name ?? <span className="muted">Sin tarifa</span>}</td>
+                  <td>{c.serviceFeePercent}%</td>
+                  <td>
+                    {nBenefits > 0 ? <ToneBadge tone="accent" small>🎁 {nBenefits}</ToneBadge> : <span className="muted">—</span>}
+                    {c.custodyActive && <ToneBadge tone="info" small> 🏠 Custodio</ToneBadge>}
+                  </td>
+                  <td className="text-right nowrap">
+                    {acc.pending > 0.004 ? (
+                      <span className="money-due">{money(acc.pending)}</span>
+                    ) : acc.credit > 0.004 ? (
+                      <span className="money-ok">{money(acc.credit)} a favor</span>
+                    ) : (
+                      <span className="muted">Al día</span>
                     )}
                   </td>
-                  <td>{client.country}</td>
-                  <td>{client.city}</td>
-                  <td>{client.phone}</td>
-                  <td>
-                    <span className={`badge ${client.deliveryMethod === 'STORE_PICKUP' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '0.75rem' }}>
-                      {client.deliveryMethod === 'STORE_PICKUP' ? '🏪 Retiro' : '🏠 Envío'}
-                    </span>
-                  </td>
-                  <td>{client.orders.length}</td>
-                  <td>${totalAmount.toFixed(2)}</td>
-                  <td style={{ color: '#10b981', fontWeight: 600 }}>${totalPaid.toFixed(2)}</td>
-                  <td style={{ color: totalBalance > 0 ? '#ef4444' : '#10b981', fontWeight: 600 }}>
-                    ${totalBalance.toFixed(2)}
-                  </td>
-                  <td style={{ display: 'flex', gap: '8px' }}>
-                    <Link href={`/clientes/${client.id}`} className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }} title="Detalles">📄</Link>
-                    <Link href={`/pedidos?clientId=${client.id}`} className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }} title="Ver Pedidos">📦</Link>
-                    <Link href={`/clientes/${client.id}`} className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }} title="Editar">✏️</Link>
-                    <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem', color: '#ef4444' }} title="Eliminar">🗑️</button>
+                  <td className="nowrap">
+                    <Link href={`/pedidos/nuevo?clientId=${c.id}`} className="btn btn-secondary btn-sm" title="Nuevo pedido">🛒</Link>{' '}
+                    <Link href={`/clientes/${c.id}`} className="btn btn-secondary btn-sm">Ver</Link>
                   </td>
                 </tr>
               );
             })}
-            {clients.length === 0 && (
-              <tr>
-                <td colSpan={10} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
-                  No se encontraron clientes.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
+        {clients.length === 0 && <Empty icon="👥" title="No se encontraron clientes">Prueba con otros filtros o crea un cliente nuevo.</Empty>}
       </div>
     </>
   );
 }
-

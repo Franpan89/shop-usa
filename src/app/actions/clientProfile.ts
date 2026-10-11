@@ -1,10 +1,11 @@
 'use server';
 
+import { safe } from '@/lib/action';
 import prisma from '@/lib/prisma';
 import { requirePortalClient } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
 
-export async function updateOwnProfile(formData: FormData) {
+export const updateOwnProfile = safe(async function updateOwnProfile(formData: FormData) {
   const currentClient = await requirePortalClient();
 
   const phone = (formData.get('phone') as string)?.trim();
@@ -30,4 +31,4 @@ export async function updateOwnProfile(formData: FormData) {
 
   revalidatePath('/portal/perfil');
   return { success: true };
-}
+});

@@ -1,413 +1,372 @@
 'use server';
 
-import prisma from '@/lib/prisma';
+import { safe } from '@/lib/action';
+import type { OrderType, Prisma } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
-import { ORDER_STATUSES, normalizeOrderStatus, type OrderStatus } from '@/lib/orderStatus';
-import { recordCatalogUsage } from './productCatalog';
-import { sendOrderShippedEmail } from '@/lib/email';
+import prisma from '@/lib/prisma';
+import { requireAdmin, requireStaff } from '@/lib/auth';
+import {
+  audit,
+  getSettings,
+  getTenantId,
+  inTransaction,
+  nextNumber,
+  type Db,
+} from '@/lib/tenant';
+import {
+  cancelInvoice,
+  consumeBenefit,
+  countAvailableBenefits,
+  createInvoice,
+  reconcileClient,
+  refreshOrder,
+  type InvoiceLineInput,
+} from '@/lib/accounting';
+import { computePurchase, effectiveServiceRate } from '@/lib/domain/pricing';
+import { PRODUCT_STATUS_RANK } from '@/lib/domain/flow';
+import { recordCatalogUsage } from '@/lib/catalog';
 
-const TAX_RATE = 0.065; // 6.5% on SHOPUSA purchase values
+export interface OrderItemInput {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  storeName?: string;
+  url?: string;
+  variant?: string;
+  notes?: string;
+  imageUrl?: string;
+}
 
-export async function createOrder(
-  clientId: string,
-  shipment: { weight: number; shippingCost: number },
-  products: any[],
-) {
-  if (!clientId || !products || products.length === 0) {
-    throw new Error('Client and at least one product are required');
-  }
+export interface OrderInput {
+  clientId: string;
+  type: OrderType;
+  items: OrderItemInput[];
+  discount?: { type: 'AMOUNT' | 'PERCENT'; value: number; reason?: string } | null;
+  /** Otros costos de la compra (p. ej. shipping de la tienda). */
+  extraCharges?: number;
+  extraChargesNote?: string;
+  notes?: string;
+  channel?: string;
+}
 
-  // Get the first tenant for now
-  const tenant = await prisma.tenant.findFirst();
-  if (!tenant) throw new Error('No tenant found');
-
-  // Fetch client's service fee %
-  const client = await prisma.client.findUnique({
-    where: { id: clientId },
-    select: { serviceFeePercent: true },
-  });
-  const feePercent = client?.serviceFeePercent ?? 20;
-
-  // The order is weighed and shipped as one package — weight and shipping
-  // cost are a single figure for the whole order, not per product.
-  const weight = shipment.weight || 0;
-  const shippingCost = shipment.shippingCost || 0;
-
-  // Calculate totals
-  let taxableAmount = 0;
-  let totalPrepaid = 0;
-
-  const productData = products.map((p: any) => {
-    const purchaseValue = p.purchasedBy === 'SHOPUSA' ? (parseFloat(p.purchaseValue) || 0) : 0;
-    const prepaid = parseFloat(p.prepaidAmount) || 0;
-
-    if (p.purchasedBy === 'SHOPUSA') taxableAmount += purchaseValue;
-    totalPrepaid += prepaid;
-
+function cleanItems(items: OrderItemInput[]) {
+  if (!items || items.length === 0) throw new Error('Agrega al menos un producto');
+  return items.map((i, idx) => {
+    const name = i.name?.trim();
+    const quantity = Math.floor(Number(i.quantity));
+    const unitPrice = Number(i.unitPrice);
+    if (!name) throw new Error(`El producto #${idx + 1} necesita una descripción`);
+    if (!Number.isFinite(quantity) || quantity < 1) throw new Error(`La cantidad de "${name}" debe ser al menos 1`);
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) throw new Error(`Ingresa el precio de "${name}"`);
     return {
-      name: p.name,
-      purchasedBy: p.purchasedBy,
-      purchaseValue: p.purchasedBy === 'SHOPUSA' ? parseFloat(p.purchaseValue) : null,
-      prepaidAmount: prepaid,
+      name,
+      quantity,
+      unitPrice,
+      storeName: i.storeName?.trim() || null,
+      url: i.url?.trim() || null,
+      variant: i.variant?.trim() || null,
+      notes: i.notes?.trim() || null,
+      imageUrl: i.imageUrl?.trim() || null,
     };
   });
+}
 
-  const baseAmount = shippingCost + taxableAmount;
-  const taxAmount = parseFloat((taxableAmount * TAX_RATE).toFixed(2));
-  // Service fee is 20% (or the client's rate) of the SHOPUSA purchase value + its
-  // tax only — shipping cost never attracts the fee, whether the item was
-  // purchased by the client or by ShopUSA.
-  const serviceFeeAmount = parseFloat(((taxableAmount + taxAmount) * feePercent / 100).toFixed(2));
-  const totalAmount = parseFloat((baseAmount + taxAmount + serviceFeeAmount).toFixed(2));
-  const balance = parseFloat((totalAmount - totalPrepaid).toFixed(2));
+function cleanDiscount(d: OrderInput['discount']) {
+  if (!d || !(d.value > 0)) return null;
+  if (d.type === 'PERCENT' && d.value > 100) throw new Error('El descuento no puede superar el 100 %');
+  return { type: d.type, value: d.value, reason: d.reason?.trim() || null };
+}
 
-  const order = await prisma.order.create({
-    data: {
-      tenantId: tenant.id,
-      clientId,
-      weight,
-      shippingCost,
-      totalAmount,
-      balance,
-      taxAmount,
-      serviceFeePercent: feePercent,
-      serviceFeeAmount,
-      status: 'READY_TO_SHIP',
-      products: {
-        create: productData,
+const SERVICE_LABEL: Record<OrderType, string> = {
+  PERSONAL_SHOPPER: 'Servicio Personal Shopper',
+  CART: 'Servicio Compramos tu carrito',
+};
+
+function invoiceLines(
+  type: OrderType,
+  t: ReturnType<typeof computePurchase>,
+  cfg: { taxRatePercent: number; serviceRatePercent: number; itemCount: number; extraNote?: string | null; discountReason?: string | null },
+): InvoiceLineInput[] {
+  const lines: InvoiceLineInput[] = [
+    { kind: 'PRODUCTS', description: `Productos (${cfg.itemCount})`, amount: t.subtotal },
+    { kind: 'TAX', description: `Tax ${cfg.taxRatePercent}%`, amount: t.tax },
+    { kind: 'SERVICE_FEE', description: `${SERVICE_LABEL[type]} ${cfg.serviceRatePercent}%`, amount: t.serviceFee },
+  ];
+  if (t.extraCharges > 0) lines.push({ kind: 'EXTRA', description: cfg.extraNote || 'Otros costos de la compra', amount: t.extraCharges });
+  if (t.discountAmount > 0) {
+    lines.push({ kind: 'DISCOUNT', description: `Descuento${cfg.discountReason ? ` — ${cfg.discountReason}` : ''}`, amount: -t.discountAmount });
+  }
+  return lines;
+}
+
+function revalidateOrderPaths(orderId: string, clientId: string) {
+  revalidatePath('/pedidos');
+  revalidatePath(`/pedidos/${orderId}`);
+  revalidatePath('/pagos');
+  revalidatePath('/compras');
+  revalidatePath('/dashboard');
+  revalidatePath(`/clientes/${clientId}`);
+  revalidatePath('/portal');
+}
+
+/**
+ * Crea un pedido de Personal Shopper o de "Compramos tu carrito".
+ * La tasa de servicio sale del perfil del cliente (PS) o de la configuración (Carrito);
+ * el pedido genera una factura en la cuenta del cliente y queda PENDIENTE DE PAGO.
+ */
+export const createOrder = safe(async function createOrder(input: OrderInput) {
+  const user = await requireStaff();
+  const items = cleanItems(input.items);
+  const discount = cleanDiscount(input.discount);
+  const tenantId = await getTenantId();
+  const settings = await getSettings();
+
+  const client = await prisma.client.findUnique({ where: { id: input.clientId } });
+  if (!client) throw new Error('Selecciona un cliente');
+
+  const order = await inTransaction(async (tx) => {
+    const baseRate = input.type === 'PERSONAL_SHOPPER' ? client.serviceFeePercent : settings.cartServiceRatePercent;
+    // El beneficio por referido aplica solo a facturas de Personal Shopper.
+    const available = input.type === 'PERSONAL_SHOPPER' ? await countAvailableBenefits(tx, client.id) : 0;
+    const { rate, benefitApplied } = effectiveServiceRate(baseRate, available, settings.referralDiscountPoints);
+
+    const totals = computePurchase({
+      lines: items,
+      taxRatePercent: settings.taxRatePercent,
+      serviceRatePercent: rate,
+      extraCharges: input.extraCharges,
+      discount,
+    });
+    const number = await nextNumber(tx, tenantId, 'order');
+
+    const created = await tx.order.create({
+      data: {
+        tenantId,
+        clientId: client.id,
+        number,
+        type: input.type,
+        channel: input.channel?.trim() || null,
+        notes: input.notes?.trim() || null,
+        taxRatePercent: settings.taxRatePercent,
+        subtotal: totals.subtotal,
+        taxAmount: totals.tax,
+        baseServiceFeePercent: baseRate,
+        serviceFeePercent: rate,
+        serviceFeeAmount: totals.serviceFee,
+        extraCharges: totals.extraCharges,
+        extraChargesNote: input.extraChargesNote?.trim() || null,
+        discountType: discount?.type ?? null,
+        discountValue: discount?.value ?? null,
+        discountAmount: totals.discountAmount,
+        discountReason: discount?.reason ?? null,
+        totalAmount: totals.total,
+        products: {
+          create: items.map((i) => ({
+            tenantId,
+            clientId: client.id,
+            origin: input.type === 'PERSONAL_SHOPPER' ? ('PERSONAL_SHOPPER' as const) : ('CART' as const),
+            status: 'PENDING_PAYMENT' as const,
+            ...i,
+          })),
+        },
       },
-    },
+    });
+
+    if (benefitApplied) await consumeBenefit(tx, client.id, created.id);
+
+    await createInvoice(tx, {
+      tenantId,
+      clientId: client.id,
+      type: input.type,
+      description: `Pedido #${String(number).padStart(3, '0')} — ${input.type === 'PERSONAL_SHOPPER' ? 'Personal Shopper' : 'Compramos tu carrito'}`,
+      orderId: created.id,
+      lines: invoiceLines(input.type, totals, {
+        taxRatePercent: settings.taxRatePercent,
+        serviceRatePercent: rate,
+        itemCount: items.length,
+        extraNote: input.extraChargesNote,
+        discountReason: discount?.reason,
+      }),
+    });
+
+    // Si el cliente tiene saldo a favor, se aplica solo.
+    await reconcileClient(tx, client.id);
+    await refreshOrder(tx, created.id);
+    await audit(tx, {
+      userName: user.name,
+      action: 'order.create',
+      entity: 'Order',
+      entityId: created.id,
+      data: { total: totals.total, rate, benefitApplied, discount: totals.discountAmount },
+    });
+    return created;
   });
 
-  // Track usage in product catalog (idempotent upsert per product name)
-  for (const p of productData) {
-    await recordCatalogUsage(tenant.id, {
-      name: p.name,
-      purchasedBy: p.purchasedBy as 'CLIENT' | 'SHOPUSA',
-      purchaseValue: p.purchaseValue ?? null,
+  for (const i of items) await recordCatalogUsage(tenantId, { name: i.name, unitPrice: i.unitPrice });
+  revalidateOrderPaths(order.id, client.id);
+  revalidatePath('/productos');
+  return { success: true, orderId: order.id };
+});
+
+/** Edita un pedido que todavía no tiene compras realizadas; recalcula todo y la factura. */
+export const updateOrder = safe(async function updateOrder(orderId: string, input: Omit<OrderInput, 'clientId' | 'type'>) {
+  const user = await requireStaff();
+  const items = cleanItems(input.items);
+  const discount = cleanDiscount(input.discount);
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { products: { select: { status: true } }, invoice: { select: { id: true } }, benefitUsed: { select: { id: true } } },
+  });
+  if (!order) throw new Error('Pedido no encontrado');
+  if (order.cancelledAt) throw new Error('El pedido está cancelado');
+  if (order.products.some((p) => PRODUCT_STATUS_RANK[p.status] >= PRODUCT_STATUS_RANK.PURCHASED)) {
+    throw new Error('No se puede editar: ya hay productos comprados');
+  }
+  await inTransaction(async (tx) => {
+    // Se conserva la tasa con que se generó (incluido el beneficio de referido, si lo usó).
+    const rate = order.serviceFeePercent;
+    const totals = computePurchase({
+      lines: items,
+      taxRatePercent: order.taxRatePercent,
+      serviceRatePercent: rate,
+      extraCharges: input.extraCharges,
+      discount,
     });
+
+    await tx.product.deleteMany({ where: { orderId } });
+    await tx.product.createMany({
+      data: items.map((i) => ({
+        tenantId: order.tenantId,
+        clientId: order.clientId,
+        orderId,
+        origin: order.type === 'PERSONAL_SHOPPER' ? ('PERSONAL_SHOPPER' as const) : ('CART' as const),
+        status: 'PENDING_PAYMENT' as const,
+        ...i,
+      })),
+    });
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        notes: input.notes?.trim() || null,
+        channel: input.channel?.trim() || null,
+        subtotal: totals.subtotal,
+        taxAmount: totals.tax,
+        serviceFeeAmount: totals.serviceFee,
+        extraCharges: totals.extraCharges,
+        extraChargesNote: input.extraChargesNote?.trim() || null,
+        discountType: discount?.type ?? null,
+        discountValue: discount?.value ?? null,
+        discountAmount: totals.discountAmount,
+        discountReason: discount?.reason ?? null,
+        totalAmount: totals.total,
+      },
+    });
+
+    if (order.invoice) {
+      await tx.invoiceLine.deleteMany({ where: { invoiceId: order.invoice.id } });
+      const lines = invoiceLines(order.type, totals, {
+        taxRatePercent: order.taxRatePercent,
+        serviceRatePercent: rate,
+        itemCount: items.length,
+        extraNote: input.extraChargesNote,
+        discountReason: discount?.reason,
+      });
+      await tx.invoiceLine.createMany({
+        data: lines.map((l, i) => ({ invoiceId: order.invoice!.id, kind: l.kind, description: l.description, amount: l.amount, sortOrder: i })),
+      });
+      await tx.invoice.update({ where: { id: order.invoice.id }, data: { total: totals.total } });
+    }
+
+    await reconcileClient(tx, order.clientId);
+    await refreshOrder(tx, orderId);
+    await audit(tx, { userName: user.name, action: 'order.update', entity: 'Order', entityId: orderId, data: { total: totals.total } });
+  });
+
+  for (const i of items) await recordCatalogUsage(order.tenantId, { name: i.name, unitPrice: i.unitPrice });
+  revalidateOrderPaths(orderId, order.clientId);
+  return { success: true };
+});
+
+/** Cancela un pedido sin compras: libera pagos aplicados y el beneficio de referido. */
+export const cancelOrder = safe(async function cancelOrder(orderId: string, reason: string) {
+  const user = await requireStaff();
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { products: { select: { status: true } }, invoice: { select: { id: true } } },
+  });
+  if (!order) throw new Error('Pedido no encontrado');
+  if (order.cancelledAt) throw new Error('El pedido ya está cancelado');
+  if (order.products.some((p) => PRODUCT_STATUS_RANK[p.status] >= PRODUCT_STATUS_RANK.PURCHASED)) {
+    throw new Error('No se puede cancelar: ya hay productos comprados');
   }
 
-  revalidatePath('/pedidos');
-  revalidatePath('/productos');
-  revalidatePath(`/clientes/${clientId}`);
-  return { success: true, orderId: order.id };
-}
+  await inTransaction(async (tx) => {
+    await tx.product.updateMany({ where: { orderId }, data: { status: 'CANCELLED' } });
+    await tx.order.update({
+      where: { id: orderId },
+      data: { cancelledAt: new Date(), cancelReason: reason?.trim() || null, status: 'CANCELLED' },
+    });
+    // El beneficio que usó el pedido vuelve a quedar disponible.
+    await tx.referralBenefit.updateMany({
+      where: { usedOrderId: orderId },
+      data: { status: 'AVAILABLE', usedOrderId: null, usedAt: null },
+    });
+    if (order.invoice) {
+      // El beneficio que habría generado esta compra se anula (un pedido cancelado no es compra válida).
+      await tx.referralBenefit.updateMany({
+        where: { sourceInvoiceId: order.invoice.id, status: 'AVAILABLE' },
+        data: { status: 'VOIDED', voidedReason: 'Pedido cancelado' },
+      });
+      await cancelInvoice(tx, order.invoice.id);
+    }
+    await audit(tx, { userName: user.name, action: 'order.cancel', entity: 'Order', entityId: orderId, data: { reason } });
+  });
 
-export interface ProductFormInput {
-  name: string;
-  purchasedBy: 'CLIENT' | 'SHOPUSA';
-  purchaseValue: number | null;
-  prepaidAmount: number;
-}
+  revalidateOrderPaths(orderId, order.clientId);
+  return { success: true };
+});
 
 /**
- * Recomputes an order's tax/fee/total from its current products and its own
- * weight/shippingCost, then sets balance from the given "already paid"
- * figure — never re-derived from products' prepaidAmount, since
- * registerPayment() adjusts balance directly and isn't reflected back onto
- * any single product.
+ * Excepción al prepago (7.4): un administrador autoriza comprar sin el pago completo.
+ * El valor no pagado queda como cargo pendiente en la cuenta del cliente.
  */
-async function recalcOrderTotals(orderId: string, paidSoFar: number) {
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: { products: true },
-  });
-  if (!order) throw new Error('Order not found');
+export const authorizeCourtesy = safe(async function authorizeCourtesy(orderId: string) {
+  const user = await requireAdmin();
+  const order = await prisma.order.findUnique({ where: { id: orderId }, include: { invoice: { select: { status: true } } } });
+  if (!order) throw new Error('Pedido no encontrado');
+  if (order.cancelledAt) throw new Error('El pedido está cancelado');
+  if (order.invoice?.status === 'PAID') throw new Error('El pedido ya está pagado');
 
-  const taxableAmount = order.products.reduce(
-    (sum, p) => sum + (p.purchasedBy === 'SHOPUSA' ? p.purchaseValue ?? 0 : 0),
-    0,
-  );
-  const baseAmount = order.shippingCost + taxableAmount;
-  const taxAmount = parseFloat((taxableAmount * TAX_RATE).toFixed(2));
-  const serviceFeeAmount = parseFloat(((taxableAmount + taxAmount) * order.serviceFeePercent / 100).toFixed(2));
-  const totalAmount = parseFloat((baseAmount + taxAmount + serviceFeeAmount).toFixed(2));
-  const balance = parseFloat((totalAmount - paidSoFar).toFixed(2));
-
-  await prisma.order.update({
-    where: { id: orderId },
-    data: { totalAmount, taxAmount, serviceFeeAmount, balance },
-  });
-}
-
-export async function addProductToOrder(orderId: string, input: ProductFormInput) {
-  if (!orderId) throw new Error('Order id required');
-  if (!input.name?.trim()) throw new Error('El nombre es requerido');
-
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    select: { totalAmount: true, balance: true, clientId: true, tenantId: true },
-  });
-  if (!order) throw new Error('Order not found');
-
-  const paidSoFar = order.totalAmount - order.balance;
-  const purchaseValue = input.purchasedBy === 'SHOPUSA' ? input.purchaseValue ?? 0 : null;
-
-  await prisma.product.create({
-    data: {
-      orderId,
-      name: input.name.trim(),
-      purchasedBy: input.purchasedBy,
-      purchaseValue,
-      prepaidAmount: input.prepaidAmount,
-    },
+  await inTransaction(async (tx: Prisma.TransactionClient) => {
+    await tx.order.update({
+      where: { id: orderId },
+      data: { courtesyAuthorized: true, courtesyAuthorizedBy: user.name, courtesyAuthorizedAt: new Date() },
+    });
+    await refreshOrder(tx as Db, orderId);
+    await audit(tx, { userName: user.name, action: 'order.courtesy', entity: 'Order', entityId: orderId });
   });
 
-  await recalcOrderTotals(orderId, paidSoFar + input.prepaidAmount);
-  await recordCatalogUsage(order.tenantId, {
-    name: input.name.trim(),
-    purchasedBy: input.purchasedBy,
-    purchaseValue,
-  });
-
-  revalidatePath('/pedidos');
-  revalidatePath(`/pedidos/${orderId}`);
-  revalidatePath('/productos');
-  revalidatePath('/cajas');
-  revalidatePath(`/clientes/${order.clientId}`);
-}
-
-export async function updateProduct(productId: string, input: ProductFormInput) {
-  if (!productId) throw new Error('Product id required');
-  if (!input.name?.trim()) throw new Error('El nombre es requerido');
-
-  const existing = await prisma.product.findUnique({
-    where: { id: productId },
-    include: { order: { select: { id: true, totalAmount: true, balance: true, clientId: true } } },
-  });
-  if (!existing) throw new Error('Product not found');
-
-  const orderId = existing.orderId;
-  const paidSoFar = existing.order.totalAmount - existing.order.balance;
-  const purchaseValue = input.purchasedBy === 'SHOPUSA' ? input.purchaseValue ?? 0 : null;
-
-  await prisma.product.update({
-    where: { id: productId },
-    data: {
-      name: input.name.trim(),
-      purchasedBy: input.purchasedBy,
-      purchaseValue,
-      prepaidAmount: input.prepaidAmount,
-    },
-  });
-
-  await recalcOrderTotals(orderId, paidSoFar - existing.prepaidAmount + input.prepaidAmount);
-
-  revalidatePath('/pedidos');
-  revalidatePath(`/pedidos/${orderId}`);
-  revalidatePath('/cajas');
-  revalidatePath(`/clientes/${existing.order.clientId}`);
-}
-
-export async function updateOrderShipment(orderId: string, weight: number, shippingCost: number) {
-  if (!orderId) throw new Error('Order id required');
-  if (!Number.isFinite(weight) || weight < 0) throw new Error('Peso inválido');
-  if (!Number.isFinite(shippingCost) || shippingCost < 0) throw new Error('Costo de envío inválido');
-
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    select: { totalAmount: true, balance: true, clientId: true },
-  });
-  if (!order) throw new Error('Order not found');
-
-  const paidSoFar = order.totalAmount - order.balance;
-
-  await prisma.order.update({
-    where: { id: orderId },
-    data: { weight, shippingCost },
-  });
-
-  await recalcOrderTotals(orderId, paidSoFar);
-
-  revalidatePath('/pedidos');
-  revalidatePath(`/pedidos/${orderId}`);
-  revalidatePath('/cajas');
-  revalidatePath(`/clientes/${order.clientId}`);
-}
-
-export async function deleteOrder(orderId: string) {
-  if (!orderId) throw new Error('Order id required');
-
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    select: { clientId: true },
-  });
-  if (!order) throw new Error('Order not found');
-
-  await prisma.$transaction([
-    prisma.product.deleteMany({ where: { orderId } }),
-    prisma.order.delete({ where: { id: orderId } }),
-  ]);
-
-  revalidatePath('/pedidos');
-  revalidatePath('/cajas');
-  revalidatePath('/');
-  revalidatePath(`/clientes/${order.clientId}`);
+  revalidateOrderPaths(orderId, order.clientId);
   return { success: true };
-}
+});
 
-/**
- * Assigns (or clears) the box a single product physically travels in. Products
- * of the same order can go in different boxes — an order is only ever
- * auto-marked SHIPPED once every one of its products shares the same box; if
- * it later spans more than one box (or loses its box), it's reverted to
- * READY_TO_SHIP so staff can manage the split manually from there.
- */
-export async function assignProductToBox(productId: string, boxId: string | null) {
-  if (!productId) throw new Error('Product id required');
-
-  const product = await prisma.product.findUnique({
-    where: { id: productId },
-    select: { orderId: true },
+export const revokeCourtesy = safe(async function revokeCourtesy(orderId: string) {
+  const user = await requireAdmin();
+  const order = await prisma.order.findUnique({ where: { id: orderId }, include: { products: { select: { status: true } } } });
+  if (!order) throw new Error('Pedido no encontrado');
+  if (order.products.some((p) => PRODUCT_STATUS_RANK[p.status] >= PRODUCT_STATUS_RANK.PURCHASED)) {
+    throw new Error('Ya hay productos comprados con esta autorización');
+  }
+  await inTransaction(async (tx) => {
+    await tx.order.update({
+      where: { id: orderId },
+      data: { courtesyAuthorized: false, courtesyAuthorizedBy: null, courtesyAuthorizedAt: null },
+    });
+    await refreshOrder(tx, orderId);
+    await audit(tx, { userName: user.name, action: 'order.courtesy.revoke', entity: 'Order', entityId: orderId });
   });
-  if (!product) throw new Error('Product not found');
-
-  await prisma.product.update({
-    where: { id: productId },
-    data: { boxId },
-  });
-
-  const order = await prisma.order.findUnique({
-    where: { id: product.orderId },
-    select: { id: true, boxId: true, clientId: true, status: true, products: { select: { boxId: true } } },
-  });
-  if (!order) throw new Error('Order not found');
-
-  const boxIds = order.products.map((p) => p.boxId);
-  const derivedBoxId = boxIds.length > 0 && boxIds[0] && boxIds.every((id) => id === boxIds[0])
-    ? boxIds[0]
-    : null;
-
-  const normalized = normalizeOrderStatus(order.status);
-  let nextStatus: OrderStatus | undefined;
-  if (derivedBoxId && normalized === 'READY_TO_SHIP') nextStatus = 'SHIPPED';
-  else if (!derivedBoxId && normalized === 'SHIPPED' && order.boxId) nextStatus = 'READY_TO_SHIP';
-
-  await prisma.order.update({
-    where: { id: order.id },
-    data: { boxId: derivedBoxId, ...(nextStatus ? { status: nextStatus } : {}) },
-  });
-
-  if (nextStatus === 'SHIPPED') await notifyOrderShipped(order.id);
-
-  revalidatePath('/pedidos');
-  revalidatePath(`/pedidos/${order.id}`);
-  revalidatePath('/cajas');
-  revalidatePath(`/clientes/${order.clientId}`);
+  revalidateOrderPaths(orderId, order.clientId);
   return { success: true };
-}
+});
 
-export async function registerPayment(orderId: string, amount: number) {
-  if (!orderId) throw new Error('Order id required');
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Monto inválido');
-
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    select: { balance: true, clientId: true },
-  });
-  if (!order) throw new Error('Order not found');
-
-  const newBalance = parseFloat((order.balance - amount).toFixed(2));
-
-  await prisma.order.update({
-    where: { id: orderId },
-    data: { balance: newBalance },
-  });
-
-  revalidatePath('/pedidos');
-  revalidatePath('/');
-  revalidatePath(`/clientes/${order.clientId}`);
-  revalidatePath(`/pedidos/${orderId}`);
-  return { success: true, newBalance };
-}
-
-export async function updateOrderStatus(orderId: string, status: OrderStatus) {
-  if (!orderId) throw new Error('Order id required');
-  if (!ORDER_STATUSES.includes(status)) throw new Error('Estado inválido');
-
-  const order = await prisma.order.update({
-    where: { id: orderId },
-    data: { status },
-    select: { clientId: true, boxId: true },
-  });
-
-  if (status === 'SHIPPED') await notifyOrderShipped(orderId);
-
-  revalidatePath('/pedidos');
-  revalidatePath('/cajas');
-  revalidatePath('/');
-  revalidatePath(`/pedidos/${orderId}`);
-  revalidatePath(`/clientes/${order.clientId}`);
-  return { success: true };
-}
-
-export async function confirmOrderReceived(orderId: string) {
-  if (!orderId) throw new Error('Order id required');
-
-  const order = await prisma.order.update({
-    where: { id: orderId },
-    data: { receivedStatus: 'OK', receivedNote: null, receivedAt: new Date() },
-    select: { clientId: true, boxId: true },
-  });
-
-  revalidatePath('/pedidos');
-  revalidatePath('/cajas');
-  revalidatePath('/');
-  revalidatePath(`/pedidos/${orderId}`);
-  revalidatePath(`/clientes/${order.clientId}`);
-  return { success: true };
-}
-
-export async function reportOrderIssue(orderId: string, note: string) {
-  if (!orderId) throw new Error('Order id required');
-  const trimmed = note?.trim();
-  if (!trimmed) throw new Error('Describe la novedad');
-
-  const order = await prisma.order.update({
-    where: { id: orderId },
-    data: { receivedStatus: 'NOVEDAD', receivedNote: trimmed, receivedAt: new Date() },
-    select: { clientId: true, boxId: true },
-  });
-
-  revalidatePath('/pedidos');
-  revalidatePath('/cajas');
-  revalidatePath('/');
-  revalidatePath(`/pedidos/${orderId}`);
-  revalidatePath(`/clientes/${order.clientId}`);
-  return { success: true };
-}
-
-export async function undoOrderReceipt(orderId: string) {
-  if (!orderId) throw new Error('Order id required');
-
-  const order = await prisma.order.update({
-    where: { id: orderId },
-    data: { receivedStatus: null, receivedNote: null, receivedAt: null },
-    select: { clientId: true, boxId: true },
-  });
-
-  revalidatePath('/pedidos');
-  revalidatePath('/cajas');
-  revalidatePath('/');
-  revalidatePath(`/pedidos/${orderId}`);
-  revalidatePath(`/clientes/${order.clientId}`);
-  return { success: true };
-}
-
-async function notifyOrderShipped(orderId: string) {
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: { client: true, products: true, box: true },
-  });
-  if (!order?.client.email) return;
-
-  await sendOrderShippedEmail({
-    to: order.client.email,
-    clientName: order.client.name,
-    orderRef: `#${order.id.slice(-6).toUpperCase()}`,
-    products: order.products.map((p) => ({ name: p.name })),
-    weight: order.weight,
-    boxLabel: order.box?.internalId,
-  });
-}

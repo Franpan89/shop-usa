@@ -1,11 +1,12 @@
 'use server';
 
+import { safe } from '@/lib/action';
 import prisma from '@/lib/prisma';
 import { requireAdmin } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
 
-export async function createStaffUser(formData: FormData) {
+export const createStaffUser = safe(async function createStaffUser(formData: FormData) {
   await requireAdmin();
 
   const name = (formData.get('name') as string)?.trim();
@@ -34,4 +35,4 @@ export async function createStaffUser(formData: FormData) {
 
   revalidatePath('/usuarios');
   return { success: true };
-}
+});
