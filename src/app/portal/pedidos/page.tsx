@@ -16,7 +16,7 @@ export default async function PortalPedidos() {
   });
 
   return (
-    <div style={{ padding: 32 }}>
+    <div>
       <h1 className="page-title" style={{ marginBottom: 4 }}>Mis pedidos</h1>
       <p className="page-subtitle" style={{ marginBottom: 24 }}>Personal Shopper y Compramos tu carrito.</p>
       {orders.length === 0 ? (

@@ -74,7 +74,7 @@ export default async function PedidosPage({ searchParams }: Props) {
       <PageHeader
         title="Pedidos"
         subtitle={client ? `Pedidos de ${client.name}` : 'Personal Shopper y Compramos tu carrito. Cada pedido genera una factura en la cuenta del cliente.'}
-        actions={<Link href={`/pedidos/nuevo${clientId ? `?clientId=${clientId}` : ''}`} className="btn">+ Nuevo pedido</Link>}
+        actions={<Link href={`/pedidos/nuevo${clientId ? `?clientId=${clientId}` : ''}`} className="btn btn-mint">+ Nuevo pedido</Link>}
       />
 
       <Tabs

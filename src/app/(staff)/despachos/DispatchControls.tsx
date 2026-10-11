@@ -15,7 +15,7 @@ export function NewDispatchButton({ countries }: { countries: string[] }) {
   const [pending, startTransition] = useTransition();
   return (
     <>
-      <button className="btn" onClick={() => setOpen(true)}>+ Nuevo despacho</button>
+      <button className="btn btn-mint" onClick={() => setOpen(true)}>+ Nuevo despacho</button>
       <Modal isOpen={open} onClose={() => setOpen(false)} title="Nuevo despacho">
         <div className="stack">
           <p className="muted small">El despacho agrupa los PKG que salen en una fecha hacia un destino. Tú decides cuáles van; nada se asigna solo al “próximo lunes”.</p>

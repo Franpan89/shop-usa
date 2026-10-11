@@ -3,7 +3,7 @@ import prisma from '@/lib/prisma';
 import { requireStaff } from '@/lib/auth';
 import { getSettings, getTenantId } from '@/lib/tenant';
 import { retentionDays, retentionLevel } from '@/lib/domain/flow';
-import { Kpi, KpiGrid, PageHeader, Panel, ToneBadge, longDateTime, money } from '@/components/ui/kit';
+import { Kpi, KpiGrid, Panel, ToneBadge, longDateTime, money } from '@/components/ui/kit';
 
 import { nowMs } from '@/lib/clock';
 
@@ -88,7 +88,11 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <PageHeader title={`Hola, ${user.name.split(' ')[0]}`} subtitle="Resumen operativo de Shop USA: lo que está esperando acción en cada paso del recorrido." />
+      <section className="hero-wash">
+        <span className="eyebrow">Resumen operativo</span>
+        <h1 className="display">Hola, {user.name.split(' ')[0]}</h1>
+        <p className="lead">Lo que está esperando acción en cada paso del recorrido de la mercancía.</p>
+      </section>
 
       <KpiGrid>
         <Kpi label="Por cobrar" value={money(receivable)} tone={receivable > 0 ? 'danger' : 'success'} hint={`${invoices.length} factura(s) con saldo`} href="/pagos?vista=cobrar" />
@@ -104,7 +108,7 @@ export default async function DashboardPage() {
               {step.items.map((i) => (
                 <Link key={i.href} href={i.href} className="glass-panel kpi" style={{ background: 'var(--bg-surface-solid)' }}>
                   <span className="kpi-label">{i.icon} {i.label}</span>
-                  <span className="kpi-value" style={i.count > 0 && i.tone ? { color: i.tone === 'warning' ? '#f59e0b' : i.tone === 'success' ? '#10b981' : 'var(--accent-hover)' } : undefined}>{i.count}</span>
+                  <span className="kpi-value" style={i.count > 0 && i.tone ? { color: i.tone === 'warning' ? 'var(--color-warning)' : i.tone === 'success' ? 'var(--color-success)' : 'var(--color-canopy)' } : undefined}>{i.count}</span>
                   <span className="kpi-hint">{i.hint}</span>
                 </Link>
               ))}

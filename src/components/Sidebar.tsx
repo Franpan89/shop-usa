@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import ThemeToggle from "./ThemeToggle";
 import BrandLogo from "./BrandLogo";
 import { signOut } from "@/app/actions/auth";
 import type { NavCounts } from "@/lib/navCounts";
@@ -83,7 +82,7 @@ export default function Sidebar({ role, userName, counts = {} }: SidebarProps) {
     .toUpperCase();
 
   return (
-    <aside className="sidebar glass-panel static" style={{ height: 'calc(100vh - 48px)', margin: '24px 0 24px 24px' }}>
+    <aside className="sidebar">
       <Link href="/dashboard" className="logo-container">
         <BrandLogo height={30} />
       </Link>
@@ -108,7 +107,6 @@ export default function Sidebar({ role, userName, counts = {} }: SidebarProps) {
       </nav>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <ThemeToggle />
         <div className="user-profile-mini" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div className="user-avatar">{initials}</div>
           <div className="user-info" style={{ flex: 1, minWidth: 0 }}>

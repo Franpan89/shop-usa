@@ -36,7 +36,7 @@ export default async function CustodioPage() {
       <PageHeader
         title="Custodio de paquetería"
         subtitle="Recepción y custodia temporal de paquetes para turistas que viajan a Orlando. Se activa a mano por cliente y usa su mismo código y cuenta."
-        actions={<Link href="/recepcion?vista=casillero" className="btn">+ Recibir paquete</Link>}
+        actions={<Link href="/recepcion?vista=casillero" className="btn btn-mint">+ Recibir paquete</Link>}
       />
 
       <KpiGrid>

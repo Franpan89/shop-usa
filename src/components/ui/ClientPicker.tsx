@@ -136,7 +136,7 @@ export default function ClientPicker({
                 cursor: 'pointer',
                 textAlign: 'left',
                 color: 'var(--text-main)',
-                background: i === highlight ? 'rgba(250,126,159,0.12)' : 'transparent',
+                background: i === highlight ? 'var(--accent-soft)' : 'transparent',
               }}
             >
               <span>{c.name}</span>

@@ -41,7 +41,7 @@ export function RegisterPaymentModal({
   invoices = [],
   defaultTargetId = '',
   trigger = '+ Registrar pago',
-  triggerClassName = 'btn',
+  triggerClassName = 'btn btn-mint',
 }: {
   clients?: PickableClient[];
   clientId?: string;

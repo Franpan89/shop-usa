@@ -22,7 +22,7 @@ export default async function PortalEstadoDeCuenta() {
   const open = invoices.filter((i) => i.status === 'PENDING' || i.status === 'PARTIAL').reverse();
 
   return (
-    <div style={{ padding: 32 }}>
+    <div>
       <div className="row-between" style={{ marginBottom: 20 }}>
         <div>
           <h1 className="page-title" style={{ marginBottom: 4 }}>Estado de cuenta</h1>
@@ -78,7 +78,7 @@ export default async function PortalEstadoDeCuenta() {
                         {r.statusLabel && ['Por verificar', 'Rechazado', 'Anulado', 'Anulada'].includes(r.statusLabel) && <span className="muted small"> · {r.statusLabel}</span>}
                       </td>
                       <td className="text-right">{r.charge > 0 ? money(r.charge) : '—'}</td>
-                      <td className="text-right" style={{ color: r.credit > 0 ? '#10b981' : undefined }}>{r.credit > 0 ? money(r.credit) : '—'}</td>
+                      <td className="text-right" style={{ color: r.credit > 0 ? 'var(--color-success)' : undefined }}>{r.credit > 0 ? money(r.credit) : '—'}</td>
                       <td className="text-right strong">{r.informational ? '' : `${money(Math.abs(r.balance))}${r.balance < -0.004 ? ' a favor' : ''}`}</td>
                     </tr>
                   ))}

@@ -66,7 +66,7 @@ export default function ImageUploader({ kind, value, onChange, label, required, 
     <div className="stack-sm">
       {label && (
         <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-          {label} {required && <span style={{ color: '#ef4444' }}>*</span>}
+          {label} {required && <span style={{ color: 'var(--color-danger)' }}>*</span>}
         </label>
       )}
       <div className="row" style={{ gap: 10 }}>

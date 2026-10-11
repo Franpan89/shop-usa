@@ -1,11 +1,18 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Fraunces, Manrope, Yellowtail } from "next/font/google";
+import { Geist, Geist_Mono, Fraunces, Manrope, Yellowtail, DM_Sans } from "next/font/google";
 import "./globals.css";
 import "./ui-kit.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+});
+
+// Tipografía única del sistema interno (Arcadia): ligera en titulares, regular en interfaz.
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "700"],
 });
 
 const geistMono = Geist_Mono({
@@ -51,7 +58,7 @@ export default function RootLayout({
     <html
       lang="es"
       data-theme="light"
-      className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} ${manrope.variable} ${yellowtail.variable}`}
+      className={`${dmSans.variable} ${geistSans.variable} ${geistMono.variable} ${fraunces.variable} ${manrope.variable} ${yellowtail.variable}`}
     >
       <body>{children}</body>
     </html>

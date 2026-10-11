@@ -137,7 +137,7 @@ export default async function ConsolidadosPage({ searchParams }: { searchParams:
                   <td>
                     <StatusBadge meta={consolidationLabel(c.status, c.decision)} small />
                     {level !== 'none' && (
-                      <div className="small" style={{ marginTop: 4, color: level === 'ok' ? 'var(--text-muted)' : '#f59e0b', fontWeight: level === 'ok' ? 400 : 700 }}>
+                      <div className="small" style={{ marginTop: 4, color: level === 'ok' ? 'var(--text-muted)' : 'var(--color-warning)', fontWeight: level === 'ok' ? 400 : 700 }}>
                         {level === 'ok' ? '' : '⚠️ RETENCIÓN PROLONGADA · '}Retenido {days} día(s)
                       </div>
                     )}

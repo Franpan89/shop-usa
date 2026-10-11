@@ -16,7 +16,7 @@ export default function NewClientModal(props: Props) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button className="btn" onClick={() => setOpen(true)}>+ Nuevo cliente</button>
+      <button className="btn btn-mint" onClick={() => setOpen(true)}>+ Nuevo cliente</button>
       <Modal isOpen={open} onClose={() => setOpen(false)} title="Nuevo cliente">
         <ClientForm {...props} onDone={() => setOpen(false)} />
       </Modal>

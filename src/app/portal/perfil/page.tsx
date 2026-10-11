@@ -10,7 +10,7 @@ export default async function PortalPerfilPage() {
   if (!client) return null;
 
   return (
-    <div style={{ padding: '32px' }}>
+    <div>
       <h1 className="page-title" style={{ marginBottom: '4px' }}>Mi Perfil</h1>
       <p className="page-subtitle" style={{ marginBottom: '24px' }}>
         Puedes actualizar tu teléfono y preferencia de entrega. Para otros cambios, contacta a ShopUSA.

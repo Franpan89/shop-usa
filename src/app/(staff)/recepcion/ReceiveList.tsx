@@ -102,7 +102,7 @@ export default function ReceiveList({ groups }: { groups: ReceiveGroup[] }) {
                   <div className="muted small">
                     {i.origin === 'CART' ? '🛒 Carrito' : '🛍️ Personal Shopper'}
                     {i.orderId && <> · <Link href={`/pedidos/${i.orderId}`} className="link">Pedido {i.orderCode}</Link></>}
-                    {!photo && <span style={{ color: '#f59e0b' }}> · falta la foto</span>}
+                    {!photo && <span style={{ color: 'var(--color-warning)' }}> · falta la foto</span>}
                   </div>
                 </div>
                 <button className="btn btn-sm" disabled={!photo || pending} onClick={() => receive([i.id])}>✓ Recibido</button>

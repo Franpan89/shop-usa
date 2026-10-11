@@ -35,8 +35,8 @@ export default async function ContabilidadPage() {
   const utilidadNeta = totalCobrado - totalGastos;
 
   const kpiColor = (val: number, inverse = false) => {
-    if (inverse) return val > 0 ? '#ef4444' : '#10b981';
-    return val >= 0 ? '#10b981' : '#ef4444';
+    if (inverse) return val > 0 ? 'var(--color-danger)' : 'var(--color-success)';
+    return val >= 0 ? 'var(--color-success)' : 'var(--color-danger)';
   };
 
   return (
@@ -61,21 +61,21 @@ export default async function ContabilidadPage() {
           <div className="glass-panel stat-card" style={{ padding: '22px' }}>
             <div style={{ fontSize: '1.8rem', marginBottom: '6px' }}>💰</div>
             <div className="stat-title">Total Ventas</div>
-            <div className="stat-value" style={{ fontSize: '1.9rem', color: '#10b981' }}>${totalVentas.toFixed(2)}</div>
+            <div className="stat-value" style={{ fontSize: '1.9rem', color: 'var(--color-success)' }}>${totalVentas.toFixed(2)}</div>
             <div className="stat-desc">{invoices.length} factura(s) emitida(s)</div>
           </div>
 
           <div className="glass-panel stat-card" style={{ padding: '22px' }}>
             <div style={{ fontSize: '1.8rem', marginBottom: '6px' }}>✅</div>
             <div className="stat-title">Cobrado</div>
-            <div className="stat-value" style={{ fontSize: '1.9rem', color: '#10b981' }}>${totalCobrado.toFixed(2)}</div>
+            <div className="stat-value" style={{ fontSize: '1.9rem', color: 'var(--color-success)' }}>${totalCobrado.toFixed(2)}</div>
             <div className="stat-desc">Pagos recibidos de clientes</div>
           </div>
 
           <div className="glass-panel stat-card" style={{ padding: '22px' }}>
             <div style={{ fontSize: '1.8rem', marginBottom: '6px' }}>⏳</div>
             <div className="stat-title">Por Cobrar</div>
-            <div className="stat-value" style={{ fontSize: '1.9rem', color: totalPorCobrar > 0 ? '#f59e0b' : '#10b981' }}>${totalPorCobrar.toFixed(2)}</div>
+            <div className="stat-value" style={{ fontSize: '1.9rem', color: totalPorCobrar > 0 ? 'var(--color-warning)' : 'var(--color-success)' }}>${totalPorCobrar.toFixed(2)}</div>
             <div className="stat-desc">Saldo pendiente de clientes</div>
           </div>
         </div>
@@ -89,8 +89,8 @@ export default async function ContabilidadPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
           <div className="glass-panel stat-card" style={{ padding: '22px' }}>
             <div style={{ fontSize: '1.8rem', marginBottom: '6px' }}>💸</div>
-            <div className="stat-title" style={{ color: '#ef4444' }}>Total Gastos</div>
-            <div className="stat-value" style={{ fontSize: '1.9rem', color: '#ef4444' }}>-${totalGastos.toFixed(2)}</div>
+            <div className="stat-title" style={{ color: 'var(--color-danger)' }}>Total Gastos</div>
+            <div className="stat-value" style={{ fontSize: '1.9rem', color: 'var(--color-danger)' }}>-${totalGastos.toFixed(2)}</div>
             <div className="stat-desc">{expenses.length} egreso(s) registrado(s)</div>
           </div>
 
@@ -168,11 +168,11 @@ export default async function ContabilidadPage() {
                 </td>
                 <td>{expense.description}</td>
                 <td>{expense.country || 'N/A'}</td>
-                <td><strong style={{ color: '#ef4444' }}>${(expense.originalAmount ?? 0).toFixed(2)}</strong></td>
-                <td><strong style={{ color: '#ef4444' }}>${(expense.adjustedAmount ?? expense.originalAmount ?? 0).toFixed(2)}</strong></td>
+                <td><strong style={{ color: 'var(--color-danger)' }}>${(expense.originalAmount ?? 0).toFixed(2)}</strong></td>
+                <td><strong style={{ color: 'var(--color-danger)' }}>${(expense.adjustedAmount ?? expense.originalAmount ?? 0).toFixed(2)}</strong></td>
                 <td style={{ display: 'flex', gap: '8px' }}>
                   <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }} title="Editar">✏️</button>
-                  <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem', color: '#ef4444' }} title="Eliminar">🗑️</button>
+                  <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem', color: 'var(--color-danger)' }} title="Eliminar">🗑️</button>
                 </td>
               </tr>
             ))}
@@ -222,8 +222,8 @@ export default async function ContabilidadPage() {
                       <td>{new Date(invoice.issueDate).toLocaleDateString('es-ES')}</td>
                       <td>{INVOICE_TYPE[invoice.type]}</td>
                       <td><strong>${invoice.total.toFixed(2)}</strong></td>
-                      <td style={{ color: '#10b981', fontWeight: 600 }}>${invoice.paidAmount.toFixed(2)}</td>
-                      <td style={{ color: '#ef4444', fontWeight: 700 }}>${(invoice.total - invoice.paidAmount).toFixed(2)}</td>
+                      <td style={{ color: 'var(--color-success)', fontWeight: 600 }}>${invoice.paidAmount.toFixed(2)}</td>
+                      <td style={{ color: 'var(--color-danger)', fontWeight: 700 }}>${(invoice.total - invoice.paidAmount).toFixed(2)}</td>
                     </tr>
                   ))}
               </tbody>

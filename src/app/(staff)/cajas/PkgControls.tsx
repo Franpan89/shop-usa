@@ -28,7 +28,7 @@ export function NewPkgButton({ countries, suggested }: { countries: string[]; su
 
   return (
     <>
-      <button className="btn" onClick={() => setOpen(true)}>+ Nuevo PKG</button>
+      <button className="btn btn-mint" onClick={() => setOpen(true)}>+ Nuevo PKG</button>
       <Modal isOpen={open} onClose={() => setOpen(false)} title="Nuevo PKG">
         <div className="stack">
           <div className="form-grid">

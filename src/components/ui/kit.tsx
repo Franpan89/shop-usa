@@ -4,13 +4,34 @@ import type { BadgeTone, StatusMeta } from '@/lib/domain/flow';
 
 /** Piezas de presentación compartidas (componentes de servidor, sin estado). */
 
+const EYEBROW: Record<string, string> = {
+  Clientes: 'Ventas',
+  Pedidos: 'Ventas',
+  Pagos: 'Ventas',
+  Compras: 'Compras y bodega',
+  Recepción: 'Compras y bodega',
+  Consolidados: 'Compras y bodega',
+  'Cajas (PKG)': 'Logística',
+  Despachos: 'Logística',
+  Desconsolidación: 'Logística',
+  Entregas: 'Logística',
+  'Custodio de paquetería': 'Servicios',
+  Catálogo: 'Administración',
+  Contabilidad: 'Administración',
+  Configuraciones: 'Administración',
+  'Estado de cuenta': 'Cuenta corriente',
+  'Nuevo pedido': 'Ventas',
+};
+
 export function PageHeader({
   title,
   subtitle,
   back,
   actions,
   badges,
+  eyebrow,
 }: {
+  eyebrow?: string;
   title: ReactNode;
   subtitle?: ReactNode;
   back?: { href: string; label: string };
@@ -24,6 +45,9 @@ export function PageHeader({
           <Link href={back.href} className="back-link">
             ← {back.label}
           </Link>
+        )}
+        {(eyebrow ?? (typeof title === 'string' ? EYEBROW[title] : undefined)) && (
+          <span className="eyebrow">{eyebrow ?? EYEBROW[title as string]}</span>
         )}
         <div className="row" style={{ gap: 14 }}>
           <h1 className="page-title">{title}</h1>

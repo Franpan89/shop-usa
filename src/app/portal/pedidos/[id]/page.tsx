@@ -31,7 +31,7 @@ export default async function PortalPedidoDetalle({ params }: { params: Promise<
   const serviceLabel = order.type === 'CART' ? 'Servicio Compramos tu carrito' : 'Servicio Personal Shopper';
 
   return (
-    <div style={{ padding: 32 }}>
+    <div>
       <Link href="/portal/pedidos" className="back-link">← Mis pedidos</Link>
       <div className="row" style={{ marginBottom: 20 }}>
         <h1 className="page-title" style={{ fontSize: '2rem' }}>Pedido {orderCode(order.number)}</h1>

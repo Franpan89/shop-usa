@@ -3,8 +3,8 @@ import BrandLogo from '@/components/BrandLogo';
 
 export default function SetPasswordPage() {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-      <div className="glass-panel" style={{ padding: '40px', width: '100%', maxWidth: '380px' }}>
+    <div className="auth-page">
+      <div className="auth-card">
         <div className="logo-container" style={{ justifyContent: 'center', marginBottom: '16px' }}>
           <BrandLogo height={42} />
         </div>

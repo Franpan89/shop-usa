@@ -37,9 +37,12 @@ export default async function PortalHome() {
   const locked = !!cutoff && cutoff.getTime() < nowMs();
 
   return (
-    <div style={{ padding: 32 }}>
-      <h1 className="page-title" style={{ marginBottom: 4 }}>Hola, {client.name.split(' ')[0]}</h1>
-      <p className="page-subtitle" style={{ marginBottom: 24 }}>Tu código de casillero es <strong className="mono">{client.code}</strong>. Aquí ves tu mercancía y tu cuenta.</p>
+    <div>
+      <section className="hero-wash">
+        <span className="eyebrow">Mi cuenta</span>
+        <h1 className="display">Hola, {client.name.split(' ')[0]}</h1>
+        <p className="lead">Tu código de casillero es <strong className="mono">{client.code}</strong>. Aquí ves tu mercancía, tu envío y tu saldo.</p>
+      </section>
 
       <KpiGrid>
         <Kpi label="Saldo pendiente" value={money(account.pending)} tone={account.pending > 0.004 ? 'danger' : 'success'} hint={account.pending > 0.004 ? 'Por pagar' : 'Estás al día'} href="/portal/estado-de-cuenta" />

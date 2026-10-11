@@ -41,7 +41,7 @@ export default function SetPasswordForm() {
   return (
     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {error && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', borderLeft: '4px solid #ef4444', color: '#ef4444', padding: '12px 16px', borderRadius: '8px', fontWeight: 600 }}>
+        <div style={{ background: 'rgba(239,68,68,0.1)', borderLeft: '4px solid #ef4444', color: 'var(--color-danger)', padding: '12px 16px', borderRadius: '8px', fontWeight: 600 }}>
           ⚠️ {error}
         </div>
       )}

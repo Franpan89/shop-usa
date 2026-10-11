@@ -103,9 +103,9 @@ export default async function EstadoDeCuentaPage({ params }: Props) {
                         )}
                       </td>
                       <td className="mono small">{r.reference ?? '—'}</td>
-                      <td className="text-right" style={{ color: r.charge > 0 ? '#ef4444' : undefined }}>{r.charge > 0 ? money(r.charge) : '—'}</td>
-                      <td className="text-right" style={{ color: r.credit > 0 ? '#10b981' : undefined }}>{r.credit > 0 ? money(r.credit) : '—'}</td>
-                      <td className="text-right strong" style={{ color: r.balance > 0.004 ? '#ef4444' : r.balance < -0.004 ? '#10b981' : undefined }}>
+                      <td className="text-right" style={{ color: r.charge > 0 ? 'var(--color-danger)' : undefined }}>{r.charge > 0 ? money(r.charge) : '—'}</td>
+                      <td className="text-right" style={{ color: r.credit > 0 ? 'var(--color-success)' : undefined }}>{r.credit > 0 ? money(r.credit) : '—'}</td>
+                      <td className="text-right strong" style={{ color: r.balance > 0.004 ? 'var(--color-danger)' : r.balance < -0.004 ? 'var(--color-success)' : undefined }}>
                         {r.informational ? '' : money(Math.abs(r.balance))}
                         {!r.informational && r.balance < -0.004 ? ' a favor' : ''}
                       </td>

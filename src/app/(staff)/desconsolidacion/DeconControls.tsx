@@ -116,7 +116,7 @@ export function DeconList({ groups }: { groups: DeconGroup[] }) {
                 <Thumb src={i.imageUrl} alt={i.name} />
                 <div className="grow">
                   <div className="strong">{i.name}{i.quantity > 1 ? ` (x${i.quantity})` : ''}</div>
-                  <div className="muted small">Debe estar en <span className="mono strong">{i.pkgCode}</span>{i.issueNote && <span style={{ color: '#ef4444' }}> · ⚠️ {i.issueNote}</span>}</div>
+                  <div className="muted small">Debe estar en <span className="mono strong">{i.pkgCode}</span>{i.issueNote && <span style={{ color: 'var(--color-danger)' }}> · ⚠️ {i.issueNote}</span>}</div>
                 </div>
                 {!i.done && <button className="btn btn-ghost btn-sm" onClick={() => flagMissing(i)}>Faltante</button>}
               </div>

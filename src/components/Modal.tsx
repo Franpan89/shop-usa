@@ -47,8 +47,7 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
           left: 0;
           width: 100%;
           height: 100%;
-          background: rgba(0, 0, 0, 0.4);
-          backdrop-filter: blur(8px);
+          background: rgba(16, 31, 30, 0.45);
           display: flex;
           justify-content: center;
           align-items: center;
@@ -61,11 +60,12 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
           max-width: 780px;
           margin: 20px;
           padding: 32px;
-          border-radius: 24px;
+          border-radius: 16px;
+          border: 1px solid var(--border-color);
           background: var(--bg-surface-solid) !important;
           backdrop-filter: none !important;
           -webkit-backdrop-filter: none !important;
-          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+          box-shadow: none !important;
           animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
           max-height: 90vh;
           overflow-y: auto;
@@ -79,8 +79,9 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
         }
 
         .modal-title {
-          font-size: 1.5rem;
-          font-weight: 700;
+          font-size: 24px;
+          font-weight: 400;
+          letter-spacing: 0.01em;
           margin: 0;
         }
 
@@ -95,7 +96,7 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
         }
 
         .modal-close:hover {
-          color: var(--text-color);
+          color: var(--text-main);
         }
 
         @keyframes fadeIn {
