@@ -11,9 +11,10 @@ export function CancelOrderButton({ orderId }: { orderId: string }) {
     <ActionButton
       className="btn btn-ghost btn-sm"
       success="Pedido cancelado"
-      action={async () => {
-        const reason = window.prompt('Motivo de la cancelación (opcional). Se liberarán los pagos aplicados.');
-        if (reason === null) return { ok: true };
+      confirm="Se liberarán los pagos aplicados a este pedido."
+      prompt={{ label: 'Motivo de la cancelación (opcional)' }}
+      confirmLabel="Cancelar pedido"
+      action={async (reason) => {
         const res = await cancelOrder(orderId, reason);
         if (res.ok) router.refresh();
         return res;

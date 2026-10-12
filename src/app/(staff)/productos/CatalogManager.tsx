@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/components/ui/Toast';
+import ActionButton from '@/components/ui/ActionButton';
 import { createCatalogEntry, deleteCatalogEntry, updateCatalogEntry } from '@/app/actions/productCatalog';
 
 export interface CatalogRow {
@@ -66,7 +67,7 @@ export default function CatalogManager({ rows }: { rows: CatalogRow[] }) {
                   <td className="muted small">{r.lastUsed ?? '—'}</td>
                   <td className="nowrap">
                     <button className="btn btn-ghost btn-sm" onClick={() => { setEditing(r.id); setDraft({ name: r.name, price: r.price != null ? String(r.price) : '', notes: r.notes ?? '' }); }}>✏️</button>{' '}
-                    <button className="btn btn-ghost btn-sm" disabled={pending} onClick={() => window.confirm(`¿Eliminar "${r.name}" del catálogo?`) && run(() => deleteCatalogEntry(r.id), 'Eliminado')}>🗑️</button>
+                    <ActionButton className="btn btn-ghost btn-sm" confirm={`¿Eliminar "${r.name}" del catálogo?`} success="Eliminado" action={() => deleteCatalogEntry(r.id)} onDone={() => router.refresh()}>🗑️</ActionButton>
                   </td>
                 </tr>
               ),

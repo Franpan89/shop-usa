@@ -87,24 +87,23 @@ export function ReopenButton({ consolidationId }: { consolidationId: string }) {
 /** Cierre semanal: cierra y factura todo lo que no fue retenido (sin respuesta = se despacha). */
 export function WeeklyBatchButton({ ready }: { ready: number }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
   return (
-    <button
+    <ActionButton
       className="btn"
-      disabled={pending || ready === 0}
-      onClick={() => {
-        if (!window.confirm(`Se cerrarán y facturarán ${ready} consolidado(s) que no fueron retenidos. ¿Continuar?`)) return;
-        startTransition(async () => {
-          const res = await closeWeeklyBatch();
-          if (!res.ok) return toast(res.error, 'error');
-          toast(`${res.closed} consolidado(s) cerrados y facturados`, 'success');
-          for (const s of res.skipped) toast(`${s.client}: ${s.reason}`, 'error');
-          router.refresh();
-        });
+      disabled={ready === 0}
+      confirm={`Se cerrarán y facturarán ${ready} consolidado(s) que no fueron retenidos. ¿Continuar?`}
+      confirmLabel="Cerrar semana"
+      action={async () => {
+        const res = await closeWeeklyBatch();
+        if (!res.ok) return res;
+        toast(`${res.closed} consolidado(s) cerrados y facturados`, 'success');
+        for (const sk of res.skipped) toast(`${sk.client}: ${sk.reason}`, 'error');
+        router.refresh();
+        return res;
       }}
     >
-      {pending ? '⏳ Cerrando…' : `Cerrar semana (${ready})`}
-    </button>
+      {`Cerrar semana (${ready})`}
+    </ActionButton>
   );
 }
 

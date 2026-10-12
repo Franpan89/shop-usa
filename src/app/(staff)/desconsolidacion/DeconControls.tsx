@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Thumb from '@/components/ui/Thumb';
+import ActionButton from '@/components/ui/ActionButton';
 import { toast } from '@/components/ui/Toast';
 import { confirmProductsArrived, receivePkgsAtDestination } from '@/app/actions/logistics';
 import { setProductIssue } from '@/app/actions/purchasing';
@@ -82,16 +83,6 @@ export function DeconList({ groups }: { groups: DeconGroup[] }) {
     });
   }
 
-  function flagMissing(item: DeconItem) {
-    const note = window.prompt(`¿Qué pasó con "${item.name}"? (ej. no se encontró en ${item.pkgCode})`, item.issueNote ?? `No se encontró en ${item.pkgCode}`);
-    if (note === null) return;
-    startTransition(async () => {
-      const res = await setProductIssue(item.id, note || null);
-      if (!res.ok) return toast(res.error, 'error');
-      router.refresh();
-    });
-  }
-
   return (
     <>
       {groups.map((g) => {
@@ -118,7 +109,18 @@ export function DeconList({ groups }: { groups: DeconGroup[] }) {
                   <div className="strong">{i.name}{i.quantity > 1 ? ` (x${i.quantity})` : ''}</div>
                   <div className="muted small">Debe estar en <span className="mono strong">{i.pkgCode}</span>{i.issueNote && <span style={{ color: 'var(--color-danger)' }}> · ⚠️ {i.issueNote}</span>}</div>
                 </div>
-                {!i.done && <button className="btn btn-ghost btn-sm" onClick={() => flagMissing(i)}>Faltante</button>}
+                {!i.done && (
+                  <ActionButton
+                    className="btn btn-ghost btn-sm"
+                    confirm={`¿Qué pasó con "${i.name}"?`}
+                    prompt={{ label: 'Nota del faltante', defaultValue: i.issueNote ?? `No se encontró en ${i.pkgCode}` }}
+                    confirmLabel="Guardar"
+                    success="Faltante registrado"
+                    action={(note) => setProductIssue(i.id, note || null)}
+                  >
+                    Faltante
+                  </ActionButton>
+                )}
               </div>
             ))}
           </div>
