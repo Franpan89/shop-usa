@@ -5,6 +5,7 @@ import { getSettings } from '@/lib/tenant';
 import { nowMs } from '@/lib/clock';
 import Sidebar from '@/components/Sidebar';
 import Toaster from '@/components/ui/Toast';
+import TableLabels from '@/components/ui/TableLabels';
 
 export default async function StaffLayout({ children }: { children: React.ReactNode }) {
   const user = await requireStaff();
@@ -35,6 +36,7 @@ export default async function StaffLayout({ children }: { children: React.ReactN
         </main>
       </div>
       <Toaster />
+      <TableLabels />
     </div>
   );
 }

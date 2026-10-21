@@ -1,0 +1,323 @@
+/* ============================================================================
+   Panel interno (staff) · adaptación a celular y tablet
+   Se carga después de globals.css y ui-kit.css. Solo aplica en pantalla
+   (`screen`): la impresión de estados de cuenta conserva su diseño.
+   · ≤1024px  menú lateral → panel deslizable + barra superior
+   · ≤760px   menú inferior, tablas → tarjetas, botones y campos táctiles
+   ============================================================================ */
+
+/* Piezas que solo existen en celular/tablet */
+.mobile-topbar,
+.staff-tabbar,
+.sidebar-backdrop,
+.sidebar-close { display: none; }
+
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+@media screen and (max-width: 1024px) {
+  .app-shell { height: 100vh; height: 100dvh; }
+  .app-layout { flex-direction: column; }
+
+  /* Barra superior fija con el título de la sección */
+  .mobile-topbar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 12px;
+    height: 56px;
+    padding: 0 14px;
+    background: var(--color-sheet-white);
+    border-bottom: 1px solid var(--border-color);
+    z-index: 20;
+  }
+  .mobile-topbar-title {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 17px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mobile-menu-btn {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    margin-left: -8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    border-radius: var(--radius-button);
+    font-size: 24px;
+    line-height: 1;
+    color: var(--color-bark);
+    cursor: pointer;
+  }
+  .mobile-menu-btn:active { background: var(--accent-soft); }
+  .mobile-menu-dot {
+    position: absolute;
+    top: 9px;
+    right: 8px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-mint-pulse);
+    border: 2px solid var(--color-sheet-white);
+  }
+
+  /* Menú lateral como panel deslizable */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    height: auto;
+    width: min(300px, 86vw);
+    z-index: 60;
+    padding-top: calc(16px + env(safe-area-inset-top));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    transform: translateX(-102%);
+    visibility: hidden;
+    transition: transform 0.22s ease, visibility 0s linear 0.22s;
+  }
+  .sidebar.open {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.22s ease, visibility 0s;
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(16, 31, 30, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+  .sidebar-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-button);
+    font-size: 16px;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  /* Objetivos táctiles cómodos dentro del menú */
+  .nav-link { padding: 11px 12px; font-size: 15px; }
+  .nav-section { margin-top: 16px; }
+  body.nav-open .main-content { overflow: hidden; }
+
+  .main-content { padding: 24px 24px 48px; }
+  .page-title,
+  .page-header .page-title { font-size: 30px; }
+  .hero-wash { padding: 28px 24px 24px; }
+  .hero-wash .display { font-size: 36px; }
+}
+
+@media screen and (max-width: 760px) {
+  body { font-size: 15px; }
+
+  /* Aviso semanal: compacto */
+  .announce { font-size: 12px; padding: 7px 14px; text-align: left; line-height: 1.35; }
+  .announce a { margin-left: 6px; white-space: nowrap; }
+
+  .main-content { padding: 16px 14px 28px; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
+
+  /* Menú inferior (en el flujo, así nada queda tapado) */
+  .staff-tabbar {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    order: 99;
+    flex: none;
+    background: var(--bg-surface-solid);
+    border-top: 1px solid var(--border-color);
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: 20;
+  }
+  .staff-tabbar .tab,
+  .staff-tabbar button.tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 58px;
+    padding: 6px 2px;
+    margin: 0;
+    background: none;
+    border: none;
+    border-top: 3px solid transparent;
+    border-radius: 0;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .staff-tabbar .tab-icon { position: relative; font-size: 21px; line-height: 1; }
+  .staff-tabbar .tab.active { color: var(--color-canopy); border-top-color: var(--color-mint-pulse); background: var(--accent-soft); }
+  .staff-tabbar .tab-dot {
+    position: absolute;
+    top: -6px;
+    left: 60%;
+    min-width: 18px;
+    padding: 1px 5px;
+    border-radius: 9px;
+    background: var(--color-mint-pulse);
+    color: var(--color-bark);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.3;
+    text-align: center;
+  }
+
+  /* Encabezados de página */
+  .page-header { flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 16px; }
+  .page-title,
+  .page-header .page-title { font-size: 26px; }
+  .page-subtitle { font-size: 14px; margin-top: 4px; }
+  .page-header > .row { width: 100%; }
+  .page-header > .row > .btn,
+  .page-header > .row > a.btn { flex: 1 1 auto; }
+  .hero-wash { padding: 20px 18px 18px; margin-bottom: 16px; }
+  .hero-wash .display { font-size: 28px; }
+  .hero-wash .lead { font-size: 15px; margin-top: 8px; }
+
+  /* Tarjetas y métricas */
+  .panel { padding: 16px; }
+  .panel-title { font-size: 18px; }
+  .panel-head { margin-bottom: 12px; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .panel .kpi-grid { grid-template-columns: minmax(0, 1fr); }
+  .kpi { padding: 14px; }
+  .kpi-value { font-size: 22px; overflow-wrap: anywhere; }
+  .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .stat-card { padding: 14px; }
+  .stat-value { font-size: 24px; }
+  .page-grid { gap: 14px; }
+  .alert { padding: 10px 12px; font-size: 0.88rem; }
+  .stack { gap: 14px; }
+
+  /* Pestañas: una sola fila que se desliza */
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0;
+    margin: 0 -14px 16px;
+    padding: 0 14px;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: none; white-space: nowrap; padding: 11px 14px; font-size: 14px; }
+
+  /* Filtros apilados, a lo ancho */
+  .filter-bar { gap: 10px; padding: 12px; margin-bottom: 14px; align-items: stretch; }
+  /* La búsqueda ocupa todo el ancho; los selectores se acomodan de a dos */
+  .filter-bar > * { flex: 1 1 calc(50% - 6px); min-width: 0; }
+  .filter-bar > .input-container:first-child,
+  .filter-bar > a,
+  .filter-bar > button { flex-basis: 100%; }
+  .filter-bar .input-container { min-width: 0 !important; }
+  .filter-bar .input-field { width: 100%; }
+
+  /* Controles táctiles; 16px evita el zoom automático de iOS al enfocar */
+  .btn { min-height: 44px; padding: 10px 18px; }
+  .btn-sm { min-height: 38px; padding: 7px 14px; }
+  .input-field,
+  select.input-field,
+  textarea.input-field { min-height: 44px; font-size: 16px; width: 100%; }
+  .check { min-height: 40px; }
+  .check input { width: 22px; height: 22px; }
+  .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .back-link { padding: 6px 0; }
+
+  /* Selección con barra de acción pegada abajo */
+  .sticky-bar { flex-wrap: wrap; padding: 12px 14px; }
+  .sticky-bar .btn { flex: 1 1 auto; }
+  .group-head { padding: 12px 14px; }
+  .group-row { padding: 12px 14px; gap: 10px; flex-wrap: wrap; }
+
+  /* Avisos y fotos */
+  .toast-host { left: 12px; right: 12px; bottom: 12px; }
+  .toast { max-width: none; }
+  .lightbox { padding: 12px; }
+
+  /* ---------- Tablas → tarjetas ----------
+     Cada fila es una tarjeta. El rótulo de cada dato sale del encabezado de la
+     columna (data-label, lo pone <TableLabels />). Para dejar una tabla como
+     tabla con desplazamiento horizontal: className="data-table keep-table". */
+  .table-container { overflow: visible; }
+  .table-container:has(> .data-table.keep-table) { overflow-x: auto; }
+  .glass-panel.table-container { background: transparent; border: none; border-radius: 0; }
+
+  .data-table:not(.keep-table),
+  .data-table:not(.keep-table) tbody,
+  .data-table:not(.keep-table) tfoot { display: block; min-width: 0; width: 100%; }
+  .data-table:not(.keep-table) thead {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); /* oculto, accesible */
+  }
+  .data-table:not(.keep-table) tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 14px;
+    padding: 14px;
+    margin-bottom: 10px;
+    background: var(--color-sheet-white);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+  }
+  .data-table:not(.keep-table) tbody tr:last-child { border-bottom: 1px solid var(--border-color); }
+  .data-table:not(.keep-table) tbody tr:hover { background: var(--color-sheet-white); }
+  .data-table:not(.keep-table) td,
+  .data-table.compact:not(.keep-table) td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    text-align: left !important;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .data-table:not(.keep-table) td.nowrap { white-space: normal; }
+  .data-table:not(.keep-table) td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+  .data-table:not(.keep-table) td:not([data-label])::before { content: none; }
+  /* Primera celda = título de la tarjeta; última sin rótulo = acciones */
+  .data-table:not(.keep-table) td:first-child { grid-column: 1 / -1; font-size: 16px; }
+  .data-table:not(.keep-table) td:first-child::before { display: none; }
+  .data-table:not(.keep-table) td:not([data-label]) { grid-column: 1 / -1; }
+  .data-table:not(.keep-table) td:empty { display: none; }
+  .data-table:not(.keep-table) td:not([data-label]) .btn,
+  .data-table:not(.keep-table) td:not([data-label]) button { width: 100%; }
+  .data-table:not(.keep-table) td input.input-field { width: 100% !important; }
+  .data-table:not(.keep-table) tfoot tr { background: var(--color-cream-paper); }
+  .data-table:not(.keep-table) tfoot td { border-top: none; }
+}
+
+/* Teléfonos muy angostos */
+@media screen and (max-width: 380px) {
+  .kpi-grid { grid-template-columns: minmax(0, 1fr); }
+  .staff-tabbar .tab { font-size: 10px; }
+}
