@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 const PUBLIC_EXACT_PATHS = ['/', '/login', '/set-password', '/registro', '/olvide-contrasena'];
 // Prefix-match public routes (auth handshake callbacks).
 // /api/cron/* se protege con CRON_SECRET en el propio handler (Vercel Cron no tiene sesión).
-const PUBLIC_PREFIX_PATHS = ['/auth/callback', '/api/cron'];
+const PUBLIC_PREFIX_PATHS = ['/auth/callback', '/auth/confirm', '/api/cron'];
 
 export async function proxy(request: NextRequest) {
   const hostname = request.headers.get('host') || '';

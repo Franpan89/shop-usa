@@ -34,7 +34,7 @@ export default function SetPasswordForm() {
       setError(updateError.message);
       return;
     }
-    router.push('/');
+    router.push('/login');
     router.refresh();
   }
 

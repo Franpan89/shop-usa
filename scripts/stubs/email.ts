@@ -7,3 +7,4 @@ export const sendPaymentRejectedEmail = rec('paymentRejected');
 export const sendShippedEmail = rec('shipped');
 export const sendReadyForPickupEmail = rec('readyForPickup');
 export const sendRetentionAlertEmail = rec('retention');
+export const sendAuthLinkEmail = rec('authLink');

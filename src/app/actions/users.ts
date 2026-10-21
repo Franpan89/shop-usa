@@ -3,7 +3,7 @@
 import { safe } from '@/lib/action';
 import prisma from '@/lib/prisma';
 import { requireAdmin } from '@/lib/auth';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { sendAccessLink } from '@/lib/authLinks';
 import { revalidatePath } from 'next/cache';
 
 export const createStaffUser = safe(async function createStaffUser(formData: FormData) {
@@ -22,12 +22,7 @@ export const createStaffUser = safe(async function createStaffUser(formData: For
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) throw new Error('Ya existe un usuario con ese correo');
 
-  const admin = createAdminClient();
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-  const { error } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${siteUrl}/auth/callback?next=/set-password`,
-  });
-  if (error) throw new Error(`No se pudo invitar al usuario: ${error.message}`);
+  await sendAccessLink({ email, name, purpose: 'invite' });
 
   await prisma.user.create({
     data: { tenantId: tenant.id, name, email, role },

@@ -6,13 +6,13 @@ import prisma from '@/lib/prisma';
 import { requireStaff } from '@/lib/auth';
 import { assertEmailFree } from '@/lib/clientAccess';
 import { isValidEmail, normalizeClientCode } from '@/lib/domain/access';
-import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { sendAccessLink } from '@/lib/authLinks';
 import { audit, getTenantId, inTransaction } from '@/lib/tenant';
 
 const str = (formData: FormData, key: string) => ((formData.get(key) as string | null) ?? '').trim();
 
-const SITE = () => process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+// Último envío de "olvidé mi contraseña" por correo (memoria del proceso: freno básico, no un límite estricto).
+const lastReset = new Map<string, number>();
 
 // Máximo de solicitudes nuevas por hora en todo el sistema: tope contra quien llene la bandeja de basura.
 const MAX_REQUESTS_PER_HOUR = 30;
@@ -77,17 +77,8 @@ export const approveAccessRequest = safe(async function approveAccessRequest(id:
   if (request.client.email) throw new Error('Este cliente ya tiene un correo registrado');
   await assertEmailFree(request.email, request.clientId);
 
-  const admin = createAdminClient();
-  const { error } = await admin.auth.admin.inviteUserByEmail(request.email, {
-    redirectTo: `${SITE()}/auth/callback?next=/set-password`,
-  });
-  if (error) {
-    throw new Error(
-      /already|registered|exists/i.test(error.message)
-        ? 'Ese correo ya tiene una cuenta en el sistema. Pídele otro correo o revisa Supabase Auth.'
-        : `No se pudo enviar la invitación: ${error.message}`,
-    );
-  }
+  // El correo de invitación sale de ShopUSA (Resend). Si no se pudo enviar, no se liga nada.
+  await sendAccessLink({ email: request.email, name: request.client.name, purpose: 'invite' });
 
   await inTransaction(async (tx) => {
     // Condición `email: null` + unicidad: si dos aprobaciones corren a la vez, solo una gana.
@@ -128,12 +119,21 @@ export const requestPasswordReset = safe(async function requestPasswordReset(for
   if (!isValidEmail(email)) throw new Error('Escribe un correo válido');
 
   const [staff, client] = await Promise.all([
-    prisma.user.findUnique({ where: { email }, select: { id: true } }),
-    prisma.client.findUnique({ where: { email }, select: { id: true } }),
+    prisma.user.findUnique({ where: { email }, select: { name: true } }),
+    prisma.client.findUnique({ where: { email }, select: { name: true } }),
   ]);
   if (staff || client) {
-    const supabase = await createClient();
-    await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${SITE()}/auth/callback?next=/set-password` });
+    // Un solo envío por correo cada minuto: evita usar el formulario para llenarle la bandeja a alguien.
+    const last = lastReset.get(email) ?? 0;
+    if (Date.now() - last > 60_000) {
+      lastReset.set(email, Date.now());
+      try {
+        await sendAccessLink({ email, name: (client ?? staff)?.name, purpose: 'reset' });
+      } catch (err) {
+        // No se revela si el correo existe ni si el envío falló; queda en el registro del servidor.
+        console.error('[reset]', err);
+      }
+    }
   }
   return { success: true };
 });
