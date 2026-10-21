@@ -107,7 +107,13 @@ export default async function ClientDetailPage({ params }: Props) {
       <KpiGrid>
         <Kpi label="Saldo pendiente" value={money(account.pending)} tone={account.pending > 0.004 ? 'danger' : 'success'} hint={account.pending > 0.004 ? 'Debe a Shop USA' : 'Al día'} />
         <Kpi label="Saldo a favor" value={money(account.credit)} tone={account.credit > 0.004 ? 'success' : undefined} hint="Se usa solo en el próximo cargo" />
-        <Kpi label="Beneficios por referidos" value={available} tone={available > 0 ? 'accent' : undefined} hint={`−${settings.referralDiscountPoints} pts de servicio por factura`} />
+        <Kpi
+          label="Recompensas por referidos"
+          value={available}
+          tone={available > 0 ? 'accent' : undefined}
+          hint={`−${settings.referralDiscountPoints} pts de servicio por factura`}
+          info={`Se gana una recompensa cuando un referido de este cliente hace su primera compra con pago aprobado (una por referido). Cada una baja ${settings.referralDiscountPoints} puntos la tasa de servicio de su próxima factura de Personal Shopper.`}
+        />
         <Kpi
           label="Consolidado abierto"
           value={consolidation ? `${consolidation.products.length} prod.` : '—'}

@@ -7,7 +7,8 @@ import { estimateShipping } from '@/lib/consolidation';
 import { PRODUCT_STATUS, ORIGIN } from '@/lib/domain/flow';
 import { Alert, Empty, Kpi, KpiGrid, Panel, ToneBadge, longDateTime, money, qty, shortDate } from '@/components/ui/kit';
 import Thumb from '@/components/ui/Thumb';
-import { PortalDecision, TransferButton } from './PortalControls';
+import { isSquareConfigured } from '@/lib/square';
+import { PayActions, PortalDecision } from './PortalControls';
 
 import { nowMs } from '@/lib/clock';
 
@@ -47,18 +48,24 @@ export default async function PortalHome() {
       <KpiGrid>
         <Kpi label="Saldo pendiente" value={money(account.pending)} tone={account.pending > 0.004 ? 'danger' : 'success'} hint={account.pending > 0.004 ? 'Por pagar' : 'Estás al día'} href="/portal/estado-de-cuenta" />
         <Kpi label="Saldo a favor" value={money(account.credit)} tone={account.credit > 0.004 ? 'success' : undefined} hint="Se usa en tu próximo cargo" />
-        <Kpi label="Beneficios por referidos" value={benefits} tone={benefits ? 'accent' : undefined} hint={`−${settings.referralDiscountPoints} pts en la tasa de tu próxima factura`} />
+        <Kpi
+          label="Recompensas por referidos"
+          value={benefits}
+          tone={benefits ? 'accent' : undefined}
+          hint={`${settings.referralDiscountPoints} pts en la tasa de servicio de tu próxima factura`}
+          info={`Ganas una recompensa cuando una persona que tú referiste hace su primera compra y su pago es aprobado (una recompensa por cada referido). Cada recompensa baja ${settings.referralDiscountPoints} puntos la tasa de servicio de tu próxima factura de Personal Shopper.`}
+        />
       </KpiGrid>
 
       {account.pending > 0.004 && (
         <Alert tone="warning">
           Tienes <strong>{money(account.pending)}</strong> pendientes.
           <div style={{ marginTop: 8 }}>
-            <TransferButton
+            <PayActions
               invoices={openInvoices.map((i) => ({ id: i.id, label: i.description ?? 'Factura', balance: i.total - i.paidAmount }))}
-              defaultAmount={account.pending}
+              pendingTotal={account.pending}
               instructions={settings.paymentInstructions}
-              className="btn btn-sm"
+              cardEnabled={isSquareConfigured()}
             />
           </div>
         </Alert>

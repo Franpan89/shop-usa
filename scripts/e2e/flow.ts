@@ -18,6 +18,9 @@ import {
 import { setCustodyActive, deliverCustodyPackages } from '@/app/actions/custody';
 import { portalSetDecision, portalSubmitTransfer } from '@/app/actions/portal';
 import { rejectAccessRequest, requestPortalAccess } from '@/app/actions/access';
+import { confirmCardCheckout, createCardCheckout } from '@/app/actions/cardPayments';
+import { verifyWebhookSignature } from '@/lib/square';
+import { createHmac } from 'node:crypto';
 import { getClientAccount, getStatement } from '@/lib/accounting';
 import { runningBalances } from '@/lib/domain/ledger';
 
@@ -26,12 +29,19 @@ const created = { clients: [] as string[], pkgs: [] as string[], dispatches: [] 
 let passed = 0;
 // La prueba asume las reglas de Panamá del documento; si Configuraciones las cambió, las fija y las devuelve al terminar.
 let panamaRuleBackup: { id: string; allowDispatchWithBalance: boolean; usesDeconsolidation: boolean } | null = null;
+let counterBackup: { tenantId: string; key: string; value: number }[] | null = null;
 let cutoffBackup: { tenantId: string; value: Date | null } | null = null;
 async function restoreConfig() {
   if (panamaRuleBackup) {
     const { id, ...data } = panamaRuleBackup;
     await prisma.countryRule.update({ where: { id }, data });
     panamaRuleBackup = null;
+  }
+  if (counterBackup) {
+    // Los consecutivos (clientes, pedidos, facturas) vuelven a donde estaban: la prueba no debe gastar números reales.
+    await prisma.counter.deleteMany({});
+    if (counterBackup.length) await prisma.counter.createMany({ data: counterBackup });
+    counterBackup = null;
   }
   if (cutoffBackup) {
     await prisma.tenantSettings.update({ where: { tenantId: cutoffBackup.tenantId }, data: { dispatchCutoffAt: cutoffBackup.value } });
@@ -61,6 +71,7 @@ function form(entries: Record<string, string>) {
 async function cleanup() {
   const ids = created.clients;
   if (ids.length === 0) return;
+  await prisma.cardCheckout.deleteMany({ where: { clientId: { in: ids } } });
   await prisma.paymentAllocation.deleteMany({ where: { payment: { clientId: { in: ids } } } });
   await prisma.payment.deleteMany({ where: { clientId: { in: ids } } });
   await prisma.referralBenefit.deleteMany({ where: { OR: [{ referrerId: { in: ids } }, { referredId: { in: ids } }] } });
@@ -77,6 +88,7 @@ async function cleanup() {
 
 async function main() {
   const tenant = await prisma.tenant.findFirstOrThrow();
+  counterBackup = (await prisma.counter.findMany()).map((c) => ({ tenantId: c.tenantId, key: c.key, value: c.value }));
   const rule = await prisma.countryRule.findFirstOrThrow({ where: { tenantId: tenant.id, name: 'Panamá' } });
   panamaRuleBackup = { id: rule.id, allowDispatchWithBalance: rule.allowDispatchWithBalance, usesDeconsolidation: rule.usesDeconsolidation };
   await prisma.countryRule.update({ where: { id: rule.id }, data: { allowDispatchWithBalance: false, usesDeconsolidation: false } });
@@ -348,6 +360,103 @@ async function main() {
   blocked(await portalSetDecision(ec.id, 'HOLD'), 'no encontrado', 'decidir sobre consolidado ajeno');
   (globalThis as unknown as { __e2ePortal?: unknown }).__e2ePortal = undefined;
   step('un cliente no puede pagar facturas ni decidir sobre consolidados de otro cliente');
+
+  console.log('Pago con tarjeta (Square) — se cobra una vez, solo lo confirmado por Square y solo lo del cliente');
+  process.env.SQUARE_ACCESS_TOKEN = 'test-token';
+  process.env.SQUARE_LOCATION_ID = 'L-TEST';
+  process.env.SQUARE_WEBHOOK_SIGNATURE_KEY = 'webhook-key';
+  const realFetch = globalThis.fetch;
+  type FakeOrder = { state: string; total_money: { amount: number; currency: string }; net_amount_due_money: { amount: number }; tenders: { id: string; payment_id: string }[] };
+  const squareOrders = new Map<string, FakeOrder>();
+  let squareSeq = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (!url.includes('squareup')) return realFetch(input, init);
+    const reply = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (url.endsWith('/v2/online-checkout/payment-links')) {
+      const sent = JSON.parse(String(init?.body)) as { order: { line_items: { base_price_money: { amount: number } }[] } };
+      const orderId = `ORD-${stamp}-${++squareSeq}`;
+      squareOrders.set(orderId, { state: 'OPEN', total_money: { amount: sent.order.line_items[0].base_price_money.amount, currency: 'USD' }, net_amount_due_money: { amount: sent.order.line_items[0].base_price_money.amount }, tenders: [] });
+      return reply({ payment_link: { id: `PL-${squareSeq}`, url: `https://square.test/pay/${orderId}`, order_id: orderId } });
+    }
+    const orderId = decodeURIComponent(url.split('/v2/orders/')[1]);
+    return reply({ order: squareOrders.get(orderId) });
+  }) as typeof fetch;
+  const squarePay = (orderId: string, cents?: number) => {
+    const o = squareOrders.get(orderId)!;
+    if (cents !== undefined) o.total_money.amount = cents;
+    o.state = 'COMPLETED';
+    o.net_amount_due_money.amount = 0;
+    o.tenders = [{ id: `TND-${orderId}`, payment_id: `PAY-${orderId}` }];
+  };
+  const setPortal = (c: { id: string; name: string; email: string } | undefined) => {
+    (globalThis as unknown as { __e2ePortal?: unknown }).__e2ePortal = c ? { kind: 'portal', ...c } : undefined;
+  };
+
+  const cCard = ok(await createClient(form({ name: `E2E Carla ${stamp}`, phone: '+593 99 000 0005', country: 'Ecuador', city: 'Cuenca', serviceFeePercent: '20', shippingCategoryId: general.id })), 'Carla');
+  created.clients.push(cCard.clientId);
+  const oCard = ok(await createOrder({ clientId: cCard.clientId, type: 'PERSONAL_SHOPPER', items: [{ name: 'Bolso', quantity: 1, unitPrice: 40 }] }), 'pedido Carla');
+  const invCard = (await prisma.order.findUniqueOrThrow({ where: { id: oCard.orderId }, include: { invoice: true } })).invoice!;
+  setPortal({ id: cCard.clientId, name: 'Carla', email: 'carla@test.local' });
+  blocked(await createCardCheckout({ amount: 0.5 }), 'mínimo', 'monto menor a $1');
+  blocked(await createCardCheckout({ amount: invCard.total + 1 }), 'mayor a lo que debes', 'monto mayor al saldo');
+  blocked(await createCardCheckout({ amount: 5, targetInvoiceId: order1.invoice!.id }), 'Factura inválida', 'tarjeta sobre factura ajena');
+  step('la tarjeta rechaza montos menores a $1, mayores a la deuda y facturas de otro cliente');
+
+  const half = Math.round(invCard.total * 50) / 100;
+  const c1 = ok(await createCardCheckout({ amount: half, targetInvoiceId: invCard.id }), 'checkout 1');
+  assert.match(c1.url, /^https:\/\/square\.test\/pay\/ORD-/);
+  const row1 = await prisma.cardCheckout.findFirstOrThrow({ where: { clientId: cCard.clientId }, orderBy: { createdAt: 'asc' } });
+  assert.equal(row1.status, 'CREATED');
+  assert.equal(await prisma.payment.count({ where: { clientId: cCard.clientId } }), 0);
+  step('crear el enlace de Square NO registra ningún pago todavía');
+
+  assert.equal(ok(await confirmCardCheckout(row1.id), 'confirmar sin pagar').outcome, 'PENDING');
+  squarePay(row1.squareOrderId!, Math.round(half * 100) - 1); // Square dice que se cobró menos de lo pedido
+  assert.equal(ok(await confirmCardCheckout(row1.id), 'confirmar monto distinto').outcome, 'PENDING');
+  assert.equal(await prisma.payment.count({ where: { clientId: cCard.clientId } }), 0);
+  step('sin cobro en Square, o con un monto distinto al pedido, no se registra el pago');
+
+  setPortal({ id: aRes.clientId, name: 'Ana', email: 'ana@test.local' });
+  blocked(await confirmCardCheckout(row1.id), 'no encontrado', 'confirmar el pago de otro cliente');
+  setPortal({ id: cCard.clientId, name: 'Carla', email: 'carla@test.local' });
+  squarePay(row1.squareOrderId!, Math.round(half * 100));
+  const [r1, r2] = await Promise.all([confirmCardCheckout(row1.id), confirmCardCheckout(row1.id)]);
+  assert.equal(ok(r1, 'confirmar 1').outcome, 'PAID');
+  assert.equal(ok(r2, 'confirmar 2').outcome, 'PAID');
+  assert.equal(ok(await confirmCardCheckout(row1.id), 'confirmar 3').outcome, 'PAID');
+  const cardPayments = await prisma.payment.findMany({ where: { clientId: cCard.clientId } });
+  assert.equal(cardPayments.length, 1);
+  assert.equal(cardPayments[0].method, 'CARD');
+  assert.equal(cardPayments[0].status, 'APPROVED');
+  assert.equal(cardPayments[0].amount, half);
+  assert.equal(cardPayments[0].reference, `PAY-${row1.squareOrderId}`);
+  assert.equal((await prisma.invoice.findUniqueOrThrow({ where: { id: invCard.id } })).paidAmount, half);
+  step(`cobro confirmado: un solo pago de tarjeta por $${half.toFixed(2)} aunque se confirme tres veces a la vez`);
+
+  const accCard = await getClientAccount(prisma, cCard.clientId);
+  assert.equal(Math.round(accCard.pending * 100), Math.round((invCard.total - half) * 100));
+  const c2 = ok(await createCardCheckout({ amount: accCard.pending }), 'checkout 2');
+  assert.ok(c2.url);
+  const row2 = await prisma.cardCheckout.findFirstOrThrow({ where: { clientId: cCard.clientId, status: 'CREATED' } });
+  squarePay(row2.squareOrderId!);
+  assert.equal(ok(await confirmCardCheckout(row2.id), 'confirmar 2º pago').outcome, 'PAID');
+  assert.equal((await prisma.invoice.findUniqueOrThrow({ where: { id: invCard.id } })).status, 'PAID');
+  assert.equal((await getClientAccount(prisma, cCard.clientId)).pending, 0);
+  blocked(await createCardCheckout({ amount: 5 }), 'no tienes saldo pendiente', 'tarjeta sin deuda');
+  step('el segundo pago cierra la factura y, sin deuda, ya no se puede pagar con tarjeta');
+  setPortal(undefined);
+
+  const body = JSON.stringify({ type: 'payment.updated', data: { object: { payment: { order_id: row2.squareOrderId } } } });
+  const url = 'https://app.test/api/square/webhook';
+  const goodSig = createHmac('sha256', 'webhook-key').update(url + body).digest('base64');
+  assert.equal(verifyWebhookSignature({ body, signature: goodSig, url, key: 'webhook-key' }), true);
+  assert.equal(verifyWebhookSignature({ body: body + ' ', signature: goodSig, url, key: 'webhook-key' }), false);
+  assert.equal(verifyWebhookSignature({ body, signature: goodSig, url: 'https://otro.test/api/square/webhook', key: 'webhook-key' }), false);
+  assert.equal(verifyWebhookSignature({ body, signature: null, url, key: 'webhook-key' }), false);
+  assert.equal(verifyWebhookSignature({ body, signature: goodSig, url, key: '' }), false);
+  step('la firma del webhook solo vale para ese cuerpo, esa URL y esa clave');
+  globalThis.fetch = realFetch;
 
   console.log(`\n${passed} verificaciones de punta a punta superadas.`);
 }

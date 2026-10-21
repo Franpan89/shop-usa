@@ -7,7 +7,8 @@ import { ORDER_STATUS, ORDER_STEPS, ORDER_TYPE, PRODUCT_STATUS, orderStepIndex }
 import { invoiceBalanceOf, invoiceCode, orderCode } from '@/lib/logistics';
 import { Alert, Panel, Stepper, StatusBadge, ToneBadge, money, qty, shortDate } from '@/components/ui/kit';
 import Thumb from '@/components/ui/Thumb';
-import { TransferButton } from '../../PortalControls';
+import { isSquareConfigured } from '@/lib/square';
+import { PayActions } from '../../PortalControls';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,12 +77,12 @@ export default async function PortalPedidoDetalle({ params }: { params: Promise<
                 <div className="row-between"><span className="muted">Pagado</span><strong className="money-ok">{money(order.invoice.paidAmount)}</strong></div>
                 <div className="row-between"><span className="muted">Pendiente ({invoiceCode(order.invoice.number)})</span><strong className={balance > 0.004 ? 'money-due' : 'money-ok'}>{money(balance)}</strong></div>
                 {balance > 0.004 && (
-                  <TransferButton
+                  <PayActions
                     invoices={[{ id: order.invoice.id, label: `Pedido ${orderCode(order.number)}`, balance }]}
                     defaultInvoiceId={order.invoice.id}
-                    defaultAmount={balance}
+                    pendingTotal={balance}
                     instructions={settings.paymentInstructions}
-                    className="btn"
+                    cardEnabled={isSquareConfigured()}
                   />
                 )}
                 {pending > 0 && <span className="muted small">Tienes un comprobante en verificación desde {shortDate(new Date())}.</span>}

@@ -3,16 +3,18 @@ import prisma from '@/lib/prisma';
 import { requirePortalClient } from '@/lib/auth';
 import { getClientAccount, getStatement } from '@/lib/accounting';
 import { getSettings } from '@/lib/tenant';
+import { isSquareConfigured } from '@/lib/square';
 import { INVOICE_STATUS, INVOICE_TYPE } from '@/lib/domain/flow';
 import { invoiceCode } from '@/lib/logistics';
-import { Empty, Kpi, KpiGrid, Panel, StatusBadge, money, shortDate } from '@/components/ui/kit';
-import { TransferButton } from '../PortalControls';
+import { Empty, StatusBadge, money, shortDate } from '@/components/ui/kit';
+import { CardReturn, PayActions } from '../PortalControls';
 
 export const dynamic = 'force-dynamic';
 
 /** Todo lo que el cliente pregunta por WhatsApp: cuánto debo, cuánto abonaré, qué incluye mi saldo (7.14 / 7.15). */
-export default async function PortalEstadoDeCuenta() {
+export default async function PortalEstadoDeCuenta({ searchParams }: { searchParams: Promise<{ tarjeta?: string }> }) {
   const me = await requirePortalClient();
+  const { tarjeta } = await searchParams;
   const settings = await getSettings();
   const [account, rows, invoices] = await Promise.all([
     getClientAccount(prisma, me.id),
@@ -20,74 +22,87 @@ export default async function PortalEstadoDeCuenta() {
     prisma.invoice.findMany({ where: { clientId: me.id, status: { not: 'CANCELLED' } }, orderBy: [{ issueDate: 'desc' }, { number: 'desc' }] }),
   ]);
   const open = invoices.filter((i) => i.status === 'PENDING' || i.status === 'PARTIAL').reverse();
+  const due = account.pending > 0.004;
 
   return (
-    <div>
-      <div className="row-between" style={{ marginBottom: 20 }}>
-        <div>
-          <h1 className="page-title" style={{ marginBottom: 4 }}>Estado de cuenta</h1>
-          <p className="page-subtitle">Tus cargos, pagos y saldo.</p>
-        </div>
-        <TransferButton
+    <div className="stack">
+      {tarjeta && <CardReturn checkoutId={tarjeta} />}
+
+      <section className="balance-card">
+        <span className="balance-label">{due ? 'Saldo pendiente' : account.credit > 0.004 ? 'Saldo a favor' : 'Estás al día'}</span>
+        <span className={`balance-amount ${due ? 'is-due' : 'is-ok'}`}>{money(due ? account.pending : account.credit)}</span>
+        <span className="balance-hint">{due ? 'Elige cómo quieres pagar' : account.credit > 0.004 ? 'Se aplica a tu próximo cargo' : 'No tienes pagos pendientes'}</span>
+        <PayActions
           invoices={open.map((i) => ({ id: i.id, label: i.description ?? INVOICE_TYPE[i.type], balance: i.total - i.paidAmount }))}
-          defaultAmount={account.pending > 0.004 ? account.pending : undefined}
+          pendingTotal={due ? account.pending : 0}
           instructions={settings.paymentInstructions}
+          cardEnabled={isSquareConfigured()}
         />
-      </div>
+        <div className="balance-stats">
+          <div><span>A favor</span><strong>{money(account.credit)}</strong></div>
+          <div><span>Total pagado</span><strong>{money(account.paid)}</strong></div>
+        </div>
+      </section>
 
-      <KpiGrid>
-        <Kpi label="Saldo pendiente" value={money(account.pending)} tone={account.pending > 0.004 ? 'danger' : 'success'} />
-        <Kpi label="Saldo a favor" value={money(account.credit)} tone={account.credit > 0.004 ? 'success' : undefined} hint="Se aplica solo a tu próximo cargo" />
-        <Kpi label="Total pagado" value={money(account.paid)} />
-      </KpiGrid>
+      <section>
+        <h2 className="list-title">Mis facturas</h2>
+        {invoices.length === 0 ? (
+          <div className="glass-panel static"><Empty icon="🧾" title="Sin facturas" /></div>
+        ) : (
+          <div className="item-list">
+            {invoices.map((i) => {
+              const balance = i.total - i.paidAmount;
+              return (
+                <div key={i.id} className="item-card">
+                  <div className="item-top">
+                    <div>
+                      <strong className="mono">{invoiceCode(i.number)}</strong>
+                      <div className="item-sub">{i.description ?? INVOICE_TYPE[i.type]}</div>
+                    </div>
+                    <StatusBadge meta={INVOICE_STATUS[i.status]} small />
+                  </div>
+                  <div className="item-bottom">
+                    <span className="item-sub">{shortDate(i.issueDate)}</span>
+                    <span className="item-money">
+                      <span className="item-sub">Total {money(i.total)}</span>
+                      {balance > 0.004 ? <strong className="money-due">Debes {money(balance)}</strong> : <strong className="money-ok">Pagada</strong>}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
-      <div className="stack">
-        <Panel title="Mis facturas" flush>
-          {invoices.length === 0 ? <Empty icon="🧾" title="Sin facturas" /> : (
-            <div className="table-container" style={{ padding: '0 16px 16px' }}>
-              <table className="data-table compact">
-                <thead><tr><th>FACTURA</th><th>FECHA</th><th>CONCEPTO</th><th>ESTADO</th><th className="text-right">TOTAL</th><th className="text-right">SALDO</th></tr></thead>
-                <tbody>
-                  {invoices.map((i) => (
-                    <tr key={i.id}>
-                      <td className="mono strong">{invoiceCode(i.number)}</td>
-                      <td>{shortDate(i.issueDate)}</td>
-                      <td>{i.description ?? INVOICE_TYPE[i.type]}</td>
-                      <td><StatusBadge meta={INVOICE_STATUS[i.status]} small /></td>
-                      <td className="text-right">{money(i.total)}</td>
-                      <td className="text-right">{i.total - i.paidAmount > 0.004 ? <span className="money-due">{money(i.total - i.paidAmount)}</span> : <span className="money-ok">$0.00</span>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="Movimientos" subtitle="Positivo = debes · negativo = saldo a favor." flush>
-          {rows.length === 0 ? <Empty icon="📋" title="Todavía no hay movimientos" /> : (
-            <div className="table-container" style={{ padding: '0 16px 16px' }}>
-              <table className="data-table compact">
-                <thead><tr><th>FECHA</th><th>MOVIMIENTO</th><th className="text-right">CARGO</th><th className="text-right">PAGO</th><th className="text-right">SALDO</th></tr></thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.key} style={r.informational ? { opacity: 0.55 } : undefined}>
-                      <td className="nowrap">{shortDate(r.date)}</td>
-                      <td>
-                        {r.href ? <Link href={r.href} className="link">{r.description}</Link> : r.description}
-                        {r.statusLabel && ['Por verificar', 'Rechazado', 'Anulado', 'Anulada'].includes(r.statusLabel) && <span className="muted small"> · {r.statusLabel}</span>}
-                      </td>
-                      <td className="text-right">{r.charge > 0 ? money(r.charge) : '—'}</td>
-                      <td className="text-right" style={{ color: r.credit > 0 ? 'var(--color-success)' : undefined }}>{r.credit > 0 ? money(r.credit) : '—'}</td>
-                      <td className="text-right strong">{r.informational ? '' : `${money(Math.abs(r.balance))}${r.balance < -0.004 ? ' a favor' : ''}`}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
-      </div>
+      <section>
+        <h2 className="list-title">Movimientos</h2>
+        <p className="item-sub" style={{ margin: '-6px 0 10px' }}>Cargos en rojo, pagos en verde.</p>
+        {rows.length === 0 ? (
+          <div className="glass-panel static"><Empty icon="📋" title="Todavía no hay movimientos" /></div>
+        ) : (
+          <div className="item-list">
+            {rows.map((r) => (
+              <div key={r.key} className="item-card compact" style={r.informational ? { opacity: 0.55 } : undefined}>
+                <div className="item-top">
+                  <div>
+                    {r.href ? <Link href={r.href} className="link strong">{r.description}</Link> : <span className="strong">{r.description}</span>}
+                    <div className="item-sub">
+                      {shortDate(r.date)}
+                      {r.statusLabel && ['Por verificar', 'Rechazado', 'Anulado', 'Anulada'].includes(r.statusLabel) && ` · ${r.statusLabel}`}
+                    </div>
+                  </div>
+                  <div className="item-money">
+                    {r.charge > 0 && <strong className="money-due">+{money(r.charge)}</strong>}
+                    {r.credit > 0 && <strong className="money-ok">−{money(r.credit)}</strong>}
+                    {!r.informational && <span className="item-sub">Saldo {money(Math.abs(r.balance))}{r.balance < -0.004 ? ' a favor' : ''}</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

@@ -99,13 +99,36 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
           color: var(--text-main);
         }
 
+        /* Celular: el modal se vuelve una hoja que sube desde abajo, a todo el ancho. */
+        @media (max-width: 640px) {
+          .modal-overlay {
+            align-items: flex-end;
+          }
+          .modal-content {
+            margin: 0;
+            max-width: none;
+            padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+            border-radius: 20px 20px 0 0;
+            max-height: 92dvh;
+          }
+          .modal-header {
+            margin-bottom: 14px;
+          }
+          .modal-title {
+            font-size: 20px;
+          }
+          .modal-close {
+            padding: 0 8px;
+          }
+        }
+
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
         }
 
         @keyframes slideUp {
-          from { transform: translateY(20px); opacity: 0; }
+          from { transform: translateY(40px); opacity: 0; }
           to { transform: translateY(0); opacity: 1; }
         }
       `}</style>

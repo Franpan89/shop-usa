@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { BadgeTone, StatusMeta } from '@/lib/domain/flow';
+import InfoTip from '@/components/ui/InfoTip';
 
 /** Piezas de presentación compartidas (componentes de servidor, sin estado). */
 
@@ -74,17 +75,23 @@ export function Kpi({
   hint,
   tone,
   href,
+  info,
 }: {
   label: string;
   value: ReactNode;
   hint?: ReactNode;
   tone?: 'danger' | 'success' | 'warning' | 'accent';
   href?: string;
+  /** Explicación que aparece al pasar el mouse o tocar el ícono ⓘ junto al título. */
+  info?: ReactNode;
 }) {
   const className = `glass-panel kpi${tone ? ` tone-${tone}` : ''}`;
   const body = (
     <>
-      <span className="kpi-label">{label}</span>
+      <span className="kpi-label">
+        {label}
+        {info && <InfoTip label={`Qué es: ${label}`}>{info}</InfoTip>}
+      </span>
       <span className="kpi-value">{value}</span>
       {hint && <span className="kpi-hint">{hint}</span>}
     </>

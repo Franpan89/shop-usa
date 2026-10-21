@@ -35,6 +35,7 @@ model Tenant {
   custodyPackages    CustodyPackage[]
   auditLogs          AuditLog[]
   accessRequests     AccessRequest[]
+  cardCheckouts      CardCheckout[]
 }
 
 model User {
@@ -174,6 +175,7 @@ model Client {
   consolidations           Consolidation[]
   custodyPackages          CustodyPackage[]
   accessRequests           AccessRequest[]
+  cardCheckouts            CardCheckout[]
   benefitsEarned           ReferralBenefit[] @relation("BenefitReferrer")
   referralBenefitGenerated ReferralBenefit?  @relation("BenefitReferred")
 
@@ -512,6 +514,35 @@ enum PaymentStatus {
 enum PaymentKind {
   PAYMENT
   CREDIT_ADJUSTMENT
+}
+
+/// Intento de pago con tarjeta en Square. El pago real (Payment) se crea solo cuando Square confirma el cobro.
+model CardCheckout {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  amount          Float // lo que se abona a la cuenta del cliente
+  targetInvoiceId String?
+  status          CardCheckoutStatus @default(CREATED)
+
+  squareLinkId    String?
+  squareOrderId   String?  @unique
+  squarePaymentId String?  @unique
+  paymentId       String?  @unique // Payment creado al confirmarse el cobro
+
+  createdAt DateTime  @default(now())
+  paidAt    DateTime?
+
+  @@index([clientId])
+}
+
+enum CardCheckoutStatus {
+  CREATED
+  PAID
+  FAILED
 }
 
 enum PaymentSource {
