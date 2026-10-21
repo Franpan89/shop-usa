@@ -31,6 +31,7 @@ async function compress(file: File, maxSide = 1600, quality = 0.82): Promise<Blo
 
 export default function ImageUploader({ kind, value, onChange, label, required, allowPdf, compact }: ImageUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
 
@@ -57,6 +58,7 @@ export default function ImageUploader({ kind, value, onChange, label, required, 
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = '';
+      if (cameraRef.current) cameraRef.current.value = '';
     }
   }
 
@@ -78,17 +80,41 @@ export default function ImageUploader({ kind, value, onChange, label, required, 
             {hasValue ? '📎' : '📷'}
           </span>
         )}
+        {/* Galería / archivos: sin `capture`, el celular deja elegir entre fotos existentes o la cámara */}
         <input
           ref={inputRef}
           type="file"
           accept={allowPdf ? 'image/*,application/pdf' : 'image/*'}
-          capture={allowPdf ? undefined : 'environment'}
           hidden
           onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
         />
-        <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => inputRef.current?.click()}>
-          {busy ? '⏳ Subiendo…' : hasValue ? 'Cambiar' : kind === 'product' ? '📷 Agregar foto' : '📎 Subir comprobante'}
-        </button>
+        {/* Cámara directa (solo fotos de producto) */}
+        {!allowPdf && (
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            hidden
+            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+          />
+        )}
+        {busy ? (
+          <button type="button" className="btn btn-secondary btn-sm" disabled>⏳ Subiendo…</button>
+        ) : allowPdf ? (
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => inputRef.current?.click()}>
+            {hasValue ? 'Cambiar' : '📎 Subir comprobante'}
+          </button>
+        ) : (
+          <>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => cameraRef.current?.click()}>
+              📷 {hasValue ? 'Otra foto' : 'Cámara'}
+            </button>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => inputRef.current?.click()}>
+              🖼️ Galería
+            </button>
+          </>
+        )}
         {hasValue && !busy && (
           <button
             type="button"
