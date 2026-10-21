@@ -36,6 +36,7 @@ export default function Sidebar({ role, userName, counts = {} }: SidebarProps) {
         { name: "Clientes", href: "/clientes", icon: "👥" },
         { name: "Pedidos", href: "/pedidos", icon: "🛒" },
         { name: "Pagos", href: "/pagos", icon: "💳", count: "pagos" },
+        { name: "Accesos", href: "/accesos", icon: "🎟️", count: "accesos" },
       ],
     },
     {

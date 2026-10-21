@@ -17,12 +17,27 @@ import {
 } from '@/app/actions/logistics';
 import { setCustodyActive, deliverCustodyPackages } from '@/app/actions/custody';
 import { portalSetDecision, portalSubmitTransfer } from '@/app/actions/portal';
+import { rejectAccessRequest, requestPortalAccess } from '@/app/actions/access';
 import { getClientAccount, getStatement } from '@/lib/accounting';
 import { runningBalances } from '@/lib/domain/ledger';
 
 type Res = { ok: true } | { ok: false; error: string };
 const created = { clients: [] as string[], pkgs: [] as string[], dispatches: [] as string[] };
 let passed = 0;
+// La prueba asume las reglas de Panamá del documento; si Configuraciones las cambió, las fija y las devuelve al terminar.
+let panamaRuleBackup: { id: string; allowDispatchWithBalance: boolean; usesDeconsolidation: boolean } | null = null;
+let cutoffBackup: { tenantId: string; value: Date | null } | null = null;
+async function restoreConfig() {
+  if (panamaRuleBackup) {
+    const { id, ...data } = panamaRuleBackup;
+    await prisma.countryRule.update({ where: { id }, data });
+    panamaRuleBackup = null;
+  }
+  if (cutoffBackup) {
+    await prisma.tenantSettings.update({ where: { tenantId: cutoffBackup.tenantId }, data: { dispatchCutoffAt: cutoffBackup.value } });
+    cutoffBackup = null;
+  }
+}
 
 function ok<T extends Res>(res: T, label: string): Extract<T, { ok: true }> {
   if (!res.ok) throw new Error(`${label}: ${(res as { error: string }).error}`);
@@ -62,6 +77,13 @@ async function cleanup() {
 
 async function main() {
   const tenant = await prisma.tenant.findFirstOrThrow();
+  const rule = await prisma.countryRule.findFirstOrThrow({ where: { tenantId: tenant.id, name: 'Panamá' } });
+  panamaRuleBackup = { id: rule.id, allowDispatchWithBalance: rule.allowDispatchWithBalance, usesDeconsolidation: rule.usesDeconsolidation };
+  await prisma.countryRule.update({ where: { id: rule.id }, data: { allowDispatchWithBalance: false, usesDeconsolidation: false } });
+  // El cierre semanal debe estar abierto para probar la decisión del cliente desde el portal.
+  const cfg = await prisma.tenantSettings.findUniqueOrThrow({ where: { tenantId: tenant.id } });
+  cutoffBackup = { tenantId: tenant.id, value: cfg.dispatchCutoffAt };
+  await prisma.tenantSettings.update({ where: { tenantId: tenant.id }, data: { dispatchCutoffAt: new Date(Date.now() + 7 * 86_400_000) } });
   const general = await prisma.shippingCategory.findFirstOrThrow({ where: { name: 'Ecuador General' } });
   const emprendedor = await prisma.shippingCategory.findFirstOrThrow({ where: { name: 'Ecuador Emprendedores' } });
   const panama = await prisma.shippingCategory.findFirstOrThrow({ where: { name: 'Panamá' } });
@@ -296,17 +318,50 @@ async function main() {
   assert.equal(einv.shippingCost, 48.69);
   step('8.2 lb → 9 lb × $5.41 = $48.69');
 
+  console.log('Acceso al portal — un correo, un código, cada cliente ve solo lo suyo');
+  const staffEmail = (await prisma.user.findFirstOrThrow()).email;
+  const mail = (n: string) => `e2e-${n}-${stamp}@test.local`;
+  const codeAsTyped = aRes.code.replace(/^([A-Z]+)0*/, (_m, p: string) => `${p.toLowerCase()} `); // "ec 4xx"
+  blocked(await requestPortalAccess(form({ code: 'EC999999', email: mail('x'), phone: '+593 99 000 0001' })), 'No encontramos ese código', 'código inexistente');
+  blocked(await requestPortalAccess(form({ code: codeAsTyped, email: 'no-es-correo', phone: '+593 99 000 0001' })), 'correo válido', 'correo inválido');
+  blocked(await requestPortalAccess(form({ code: codeAsTyped, email: staffEmail, phone: '+593 99 000 0001' })), 'equipo', 'correo de staff');
+  step('código inexistente, correo inválido y correo del equipo son rechazados');
+  ok(await requestPortalAccess(form({ code: codeAsTyped, email: mail('ana'), phone: '+593 99 000 0001' })), 'solicitud de Ana');
+  const reqAna = await prisma.accessRequest.findFirstOrThrow({ where: { clientId: aRes.clientId } });
+  assert.equal(reqAna.status, 'PENDING');
+  assert.equal((await prisma.client.findUniqueOrThrow({ where: { id: aRes.clientId } })).email, null);
+  step('"ec 4xx" se reconoce como el código; la solicitud queda PENDIENTE y no liga ningún correo');
+  blocked(await requestPortalAccess(form({ code: aRes.code, email: mail('ana2'), phone: '+593 99 000 0001' })), 'en revisión', 'segunda solicitud del mismo código');
+  blocked(await requestPortalAccess(form({ code: bRes.code, email: mail('ana'), phone: '+593 99 000 0002' })), 'en una solicitud', 'mismo correo en otro código');
+  step('un código no puede tener dos solicitudes abiertas ni un correo repetirse entre códigos');
+  ok(await rejectAccessRequest(reqAna.id, 'prueba'), 'rechazar');
+  assert.equal((await prisma.accessRequest.findUniqueOrThrow({ where: { id: reqAna.id } })).status, 'REJECTED');
+  blocked(await rejectAccessRequest(reqAna.id), 'ya fue atendida', 'rechazar dos veces');
+  step('rechazar no da acceso y no se puede atender dos veces');
+  await prisma.client.update({ where: { id: bRes.clientId }, data: { email: mail('beto') } });
+  blocked(await requestPortalAccess(form({ code: bRes.code, email: mail('otro'), phone: '+593 99 000 0002' })), 'ya tiene un correo registrado', 'código con correo');
+  blocked(await createClient(form({ name: 'Dup', phone: '1', country: 'Ecuador', email: mail('beto') })), 'otro cliente', 'correo repetido al crear cliente');
+  blocked(await createClient(form({ name: 'Dup', phone: '1', country: 'Ecuador', email: staffEmail })), 'equipo', 'correo de staff al crear cliente');
+  step('un código con correo ligado no admite otro; el correo no se repite entre clientes ni con el equipo');
+  (globalThis as unknown as { __e2ePortal?: unknown }).__e2ePortal = { kind: 'portal', id: aRes.clientId, name: 'Ana', email: mail('ana') };
+  blocked(await portalSubmitTransfer({ amount: 5, proofPath: '2026/x.jpg', targetInvoiceId: order1.invoice!.id }), 'Factura inválida', 'pagar factura ajena');
+  blocked(await portalSetDecision(ec.id, 'HOLD'), 'no encontrado', 'decidir sobre consolidado ajeno');
+  (globalThis as unknown as { __e2ePortal?: unknown }).__e2ePortal = undefined;
+  step('un cliente no puede pagar facturas ni decidir sobre consolidados de otro cliente');
+
   console.log(`\n${passed} verificaciones de punta a punta superadas.`);
 }
 
 main()
   .then(async () => {
     await cleanup();
+    await restoreConfig();
     await prisma.$disconnect();
   })
   .catch(async (err) => {
     console.error('\n✗ FALLÓ:', err instanceof Error ? err.message : err);
     await cleanup().catch((e) => console.error('limpieza:', e));
+    await restoreConfig().catch((e) => console.error('restaurar configuración:', e));
     await prisma.$disconnect();
     process.exit(1);
   });

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 // Exact-match public routes (the marketing site) — checked with === so '/' never
 // accidentally matches every path via startsWith.
-const PUBLIC_EXACT_PATHS = ['/', '/login', '/set-password'];
+const PUBLIC_EXACT_PATHS = ['/', '/login', '/set-password', '/registro', '/olvide-contrasena'];
 // Prefix-match public routes (auth handshake callbacks).
 // /api/cron/* se protege con CRON_SECRET en el propio handler (Vercel Cron no tiene sesión).
 const PUBLIC_PREFIX_PATHS = ['/auth/callback', '/api/cron'];

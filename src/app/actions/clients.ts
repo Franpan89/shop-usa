@@ -4,6 +4,7 @@ import { safe } from '@/lib/action';
 import prisma from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { requireStaff } from '@/lib/auth';
+import { assertEmailFree } from '@/lib/clientAccess';
 import { audit, getCountryRules, getSettings, getTenantId, inTransaction, nextNumber } from '@/lib/tenant';
 import { formatClientCode } from '@/lib/domain/pricing';
 
@@ -75,10 +76,7 @@ export const createClient = safe(async function createClient(formData: FormData)
   const rule = await validateCommercialTerms(country, shippingCategoryId, serviceFeePercent);
 
   const email = optional(formData, 'email')?.toLowerCase() ?? null;
-  if (email) {
-    const dup = await prisma.client.findUnique({ where: { email } });
-    if (dup) throw new Error('Ya existe un cliente con ese correo');
-  }
+  if (email) await assertEmailFree(email);
 
   const referredById = optional(formData, 'referredById');
   const tenantId = await getTenantId();
@@ -130,10 +128,7 @@ export const updateClient = safe(async function updateClient(id: string, formDat
   await validateCommercialTerms(country, shippingCategoryId, serviceFeePercent);
 
   const email = optional(formData, 'email')?.toLowerCase() ?? null;
-  if (email && email !== existing.email) {
-    const dup = await prisma.client.findUnique({ where: { email } });
-    if (dup && dup.id !== id) throw new Error('Ya existe un cliente con ese correo');
-  }
+  if (email && email !== existing.email) await assertEmailFree(email, id);
 
   let referredById = optional(formData, 'referredById');
   if (referredById === id) throw new Error('Un cliente no puede referirse a sí mismo');

@@ -15,6 +15,7 @@ import {
   formatClientCode,
   shippingCost,
 } from './pricing';
+import { isValidEmail, normalizeClientCode, phonesMatch } from './access';
 import { invoiceStatusFor, planAllocations, runningBalances } from './ledger';
 import {
   computeOrderStatus,
@@ -322,5 +323,34 @@ describe('Custodio (Etapa 9)', () => {
     assert.equal(deliveryFee(5, delivery), 15);
     assert.equal(deliveryFee(6, delivery), 16.5);
     assert.equal(deliveryFee(12, delivery), 25.5);
+  });
+});
+
+describe('Acceso al portal', () => {
+  it('normaliza el código que escribe el cliente', () => {
+    assert.equal(normalizeClientCode('ec1'), 'EC001');
+    assert.equal(normalizeClientCode(' EC 001 '), 'EC001');
+    assert.equal(normalizeClientCode('EC00415'), 'EC415');
+    assert.equal(normalizeClientCode('pty-4'), 'PTY004');
+    assert.equal(normalizeClientCode('EC1234'), 'EC1234');
+    assert.equal(normalizeClientCode('EC'), null);
+    assert.equal(normalizeClientCode('EC000'), null);
+    assert.equal(normalizeClientCode('12345'), null);
+    assert.equal(normalizeClientCode("EC1'; drop"), null);
+  });
+
+  it('compara teléfonos aunque cambie el formato', () => {
+    assert.equal(phonesMatch('+593-99-582-9642', '0995829642'), true);
+    assert.equal(phonesMatch('+593 99 582 9642', '593995829642'), true);
+    assert.equal(phonesMatch('+593-99-582-9642', '+593-99-326-3502'), false);
+    assert.equal(phonesMatch('', '0995829642'), false);
+    assert.equal(phonesMatch('0000', '0000'), false);
+  });
+
+  it('valida el formato del correo', () => {
+    assert.equal(isValidEmail('ana@correo.com'), true);
+    assert.equal(isValidEmail('ana@correo'), false);
+    assert.equal(isValidEmail('ana correo@x.com'), false);
+    assert.equal(isValidEmail(''), false);
   });
 });
