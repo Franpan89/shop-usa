@@ -3,16 +3,34 @@ import prisma from '@/lib/prisma';
 import { requireStaff } from '@/lib/auth';
 import { INVOICE_TYPE } from '@/lib/domain/flow';
 import { invoiceCode } from '@/lib/logistics';
+import { getCountryRules } from '@/lib/tenant';
+import { CATEGORY_LABEL } from './categories';
+import { DeleteExpenseButton, ExpenseModal, PrintButton, type ExpenseRow } from './ExpenseManager';
 
 export const dynamic = 'force-dynamic';
 
-export default async function ContabilidadPage() {
-  await requireStaff();
-  const tenant = await prisma.tenant.findFirst();
+const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
-  const [expenses, invoices, payments] = await Promise.all([
+export default async function ContabilidadPage({ searchParams }: { searchParams: Promise<{ desde?: string; hasta?: string; categoria?: string }> }) {
+  await requireStaff();
+  const { desde, hasta, categoria } = await searchParams;
+  const tenant = await prisma.tenant.findFirst();
+  const countries = tenant ? (await getCountryRules()).map((c) => c.name) : [];
+
+  // Filtros de la tabla de gastos (los indicadores de arriba siempre muestran el total del negocio).
+  const dateFilter: { gte?: Date; lte?: Date } = {};
+  if (desde && !Number.isNaN(new Date(`${desde}T00:00:00`).getTime())) dateFilter.gte = new Date(`${desde}T00:00:00`);
+  if (hasta && !Number.isNaN(new Date(`${hasta}T23:59:59`).getTime())) dateFilter.lte = new Date(`${hasta}T23:59:59`);
+  const categoryFilter = categoria && categoria in CATEGORY_LABEL ? categoria : undefined;
+
+  const [allExpenses, expenses, invoices, payments] = await Promise.all([
+    tenant ? prisma.expense.findMany({ where: { tenantId: tenant.id }, select: { originalAmount: true } }) : Promise.resolve([]),
     tenant ? prisma.expense.findMany({
-      where: { tenantId: tenant.id },
+      where: {
+        tenantId: tenant.id,
+        ...(Object.keys(dateFilter).length ? { expenseDate: dateFilter } : {}),
+        ...(categoryFilter ? { category: categoryFilter } : {}),
+      },
       orderBy: { expenseDate: 'desc' }
     }) : Promise.resolve([]),
     tenant ? prisma.invoice.findMany({
@@ -30,7 +48,18 @@ export default async function ContabilidadPage() {
   const totalVentas = invoices.reduce((sum, i) => sum + i.total, 0);
   const totalCobrado = payments.reduce((sum, p) => sum + p.amount, 0);
   const totalPorCobrar = invoices.reduce((sum, i) => sum + Math.max(0, i.total - i.paidAmount), 0);
-  const totalGastos = expenses.reduce((sum, e) => sum + (e.originalAmount ?? 0), 0);
+  const totalGastos = allExpenses.reduce((sum, e) => sum + (e.originalAmount ?? 0), 0);
+  const totalFiltrado = expenses.reduce((sum, e) => sum + (e.originalAmount ?? 0), 0);
+  const filtrando = Boolean(desde || hasta || categoryFilter);
+  const rows: ExpenseRow[] = expenses.map((e) => ({
+    id: e.id,
+    date: isoDate(e.expenseDate),
+    category: e.category,
+    description: e.description,
+    country: e.country,
+    originalAmount: e.originalAmount,
+    adjustedAmount: e.adjustedAmount,
+  }));
   const utilidad = totalVentas - totalGastos;
   const utilidadNeta = totalCobrado - totalGastos;
 
@@ -47,8 +76,8 @@ export default async function ContabilidadPage() {
           <p className="page-subtitle">Resumen financiero: ventas, cobros, gastos y utilidad del negocio.</p>
         </div>
         <div style={{ display: 'flex', gap: '16px' }}>
-          <button className="btn">+ Nuevo Gasto</button>
-          <button className="btn btn-secondary">📄 Reporte PDF</button>
+          <ExpenseModal countries={countries} trigger="+ Nuevo Gasto" />
+          <PrintButton />
         </div>
       </header>
 
@@ -91,7 +120,7 @@ export default async function ContabilidadPage() {
             <div style={{ fontSize: '1.8rem', marginBottom: '6px' }}>💸</div>
             <div className="stat-title" style={{ color: 'var(--color-danger)' }}>Total Gastos</div>
             <div className="stat-value" style={{ fontSize: '1.9rem', color: 'var(--color-danger)' }}>-${totalGastos.toFixed(2)}</div>
-            <div className="stat-desc">{expenses.length} egreso(s) registrado(s)</div>
+            <div className="stat-desc">{allExpenses.length} egreso(s) registrado(s)</div>
           </div>
 
           <div className="glass-panel stat-card" style={{ padding: '22px' }}>
@@ -111,34 +140,34 @@ export default async function ContabilidadPage() {
       </div>
 
       {/* --- Filters --- */}
-      <div className="filter-bar">
+      <form method="get" className="filter-bar">
         <div className="input-container">
           <label>Fecha Inicial</label>
-          <input type="date" className="input-field" />
+          <input type="date" name="desde" className="input-field" defaultValue={desde ?? ''} />
         </div>
         <div className="input-container">
           <label>Fecha Final</label>
-          <input type="date" className="input-field" />
+          <input type="date" name="hasta" className="input-field" defaultValue={hasta ?? ''} />
         </div>
         <div className="input-container">
           <label>Categoría</label>
-          <select className="input-field">
-            <option>Todas las Categorías</option>
-            <option>LOGISTICS</option>
-            <option>SUPPLIES</option>
-            <option>SALES</option>
-            <option>OTHER</option>
+          <select name="categoria" className="input-field" defaultValue={categoryFilter ?? ''}>
+            <option value="">Todas las Categorías</option>
+            {Object.entries(CATEGORY_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
           </select>
         </div>
-        <div style={{ marginTop: 'auto' }}>
-          <button className="btn" style={{ height: '42px', padding: '0 24px' }}>🔍 Filtrar</button>
+        <div style={{ marginTop: 'auto', display: 'flex', gap: '8px' }}>
+          <button type="submit" className="btn" style={{ height: '42px', padding: '0 24px' }}>🔍 Filtrar</button>
+          {filtrando && <Link href="/gastos" className="btn btn-secondary" style={{ height: '42px', padding: '0 18px' }}>Limpiar</Link>}
         </div>
-      </div>
+      </form>
 
       {/* --- Expenses Table --- */}
       <div style={{ marginBottom: '12px' }}>
         <h3 style={{ margin: '0 0 14px 4px', fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-          Registro de Gastos / Egresos
+          Registro de Gastos / Egresos{filtrando ? ` · ${expenses.length} resultado(s) · -$${totalFiltrado.toFixed(2)}` : ''}
         </h3>
       </div>
       <div className="glass-panel table-container">
@@ -155,31 +184,31 @@ export default async function ContabilidadPage() {
             </tr>
           </thead>
           <tbody>
-            {expenses.map((expense) => (
+            {rows.map((expense) => (
               <tr key={expense.id}>
-                <td>{new Date(expense.expenseDate).toLocaleDateString('es-ES')}</td>
+                <td>{new Date(`${expense.date}T12:00:00`).toLocaleDateString('es-ES')}</td>
                 <td>
                   <span className={`badge ${
                     expense.category === 'LOGISTICS' ? 'badge-warning' :
                     expense.category === 'SUPPLIES' ? 'badge-info' : 'badge-success'
                   }`}>
-                    {expense.category}
+                    {CATEGORY_LABEL[expense.category] ?? expense.category}
                   </span>
                 </td>
                 <td>{expense.description}</td>
-                <td>{expense.country || 'N/A'}</td>
-                <td><strong style={{ color: 'var(--color-danger)' }}>${(expense.originalAmount ?? 0).toFixed(2)}</strong></td>
-                <td><strong style={{ color: 'var(--color-danger)' }}>${(expense.adjustedAmount ?? expense.originalAmount ?? 0).toFixed(2)}</strong></td>
+                <td>{expense.country || 'General'}</td>
+                <td><strong style={{ color: 'var(--color-danger)' }}>${expense.originalAmount.toFixed(2)}</strong></td>
+                <td><strong style={{ color: 'var(--color-danger)' }}>${expense.adjustedAmount.toFixed(2)}</strong></td>
                 <td style={{ display: 'flex', gap: '8px' }}>
-                  <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem' }} title="Editar">✏️</button>
-                  <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '1rem', color: 'var(--color-danger)' }} title="Eliminar">🗑️</button>
+                  <ExpenseModal expense={expense} countries={countries} trigger="✏️" triggerClassName="btn btn-secondary" triggerTitle="Editar" />
+                  <DeleteExpenseButton id={expense.id} description={expense.description} />
                 </td>
               </tr>
             ))}
-            {expenses.length === 0 && (
+            {rows.length === 0 && (
               <tr>
                 <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                  No se encontraron gastos registrados.
+                  {filtrando ? 'No hay gastos con esos filtros.' : 'Aún no hay gastos registrados. Usa “+ Nuevo Gasto”.'}
                 </td>
               </tr>
             )}
