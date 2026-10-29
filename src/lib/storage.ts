@@ -5,6 +5,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 export const PRODUCT_BUCKET = 'product-photos';
 /** Comprobantes de pago: bucket privado, se leen con URLs firmadas de corta duración. */
 export const PROOF_BUCKET = 'payment-proofs';
+/** Recibos de gastos: bucket privado, solo el personal los ve (URLs firmadas). */
+export const RECEIPT_BUCKET = 'expense-receipts';
+
+export type UploadKind = 'product' | 'proof' | 'receipt';
 
 const ensured = new Set<string>();
 
@@ -23,8 +27,10 @@ async function ensureBucket(name: string, isPublic: boolean) {
   ensured.add(name);
 }
 
-export async function createUploadTarget(kind: 'product' | 'proof', ext: string) {
-  const bucket = kind === 'product' ? PRODUCT_BUCKET : PROOF_BUCKET;
+const BUCKET_OF: Record<UploadKind, string> = { product: PRODUCT_BUCKET, proof: PROOF_BUCKET, receipt: RECEIPT_BUCKET };
+
+export async function createUploadTarget(kind: UploadKind, ext: string) {
+  const bucket = BUCKET_OF[kind];
   await ensureBucket(bucket, kind === 'product');
   const safeExt = ext.replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 5) || 'jpg';
   const path = `${new Date().getFullYear()}/${crypto.randomUUID()}.${safeExt}`;
@@ -60,4 +66,27 @@ export async function signedProofUrls(paths: (string | null | undefined)[]): Pro
     if (row.path && row.signedUrl) out.set(row.path, row.signedUrl);
   }
   return out;
+}
+
+/** URLs firmadas de los recibos de gastos (path → url). */
+export async function signedReceiptUrls(paths: (string | null | undefined)[]): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(paths.filter((p): p is string => !!p)));
+  const out = new Map<string, string>();
+  if (unique.length === 0) return out;
+  const admin = createAdminClient();
+  const { data } = await admin.storage.from(RECEIPT_BUCKET).createSignedUrls(unique, 3600);
+  for (const row of data ?? []) {
+    if (row.path && row.signedUrl) out.set(row.path, row.signedUrl);
+  }
+  return out;
+}
+
+/** Borra recibos del Storage. Es una limpieza: si falla, el gasto ya quedó bien guardado. */
+export async function removeReceipts(paths: string[]): Promise<void> {
+  if (paths.length === 0) return;
+  try {
+    await createAdminClient().storage.from(RECEIPT_BUCKET).remove(paths);
+  } catch {
+    // Archivos huérfanos no afectan la contabilidad.
+  }
 }

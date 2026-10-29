@@ -124,6 +124,16 @@ export default function OrderForm({ clients, catalog, settings, initialClientId,
     );
   }
 
+  /** El botón vive debajo del último producto; el nuevo se muestra y queda listo para escribir. */
+  function addItem() {
+    const item = emptyItem();
+    setItems((prev) => [...prev, item]);
+    setTimeout(() => {
+      document.getElementById(`item-${item.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById(`item-name-${item.key}`)?.focus({ preventScroll: true });
+    }, 50);
+  }
+
   function submit() {
     if (!clientId) return toast('Selecciona un cliente', 'error');
     const payloadItems: OrderItemInput[] = items.map((i) => ({
@@ -203,7 +213,6 @@ export default function OrderForm({ clients, catalog, settings, initialClientId,
               <h2 className="panel-title">Productos</h2>
               <p className="panel-sub">Cada producto conserva su identidad individual hasta la entrega.</p>
             </div>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setItems((p) => [...p, emptyItem()])}>+ Agregar producto</button>
           </div>
 
           <datalist id="catalog-products">
@@ -214,7 +223,7 @@ export default function OrderForm({ clients, catalog, settings, initialClientId,
 
           <div className="stack">
             {items.map((item, idx) => (
-              <div key={item.key} className="group-card" style={{ padding: 16 }}>
+              <div key={item.key} id={`item-${item.key}`} className="group-card" style={{ padding: 16 }}>
                 <div className="row-between" style={{ marginBottom: 10 }}>
                   <strong className="muted small">PRODUCTO #{idx + 1}</strong>
                   {items.length > 1 && (
@@ -224,7 +233,7 @@ export default function OrderForm({ clients, catalog, settings, initialClientId,
                 <div className="form-grid">
                   <div className="input-container span-2">
                     <label>Descripción *</label>
-                    <input className="input-field" list="catalog-products" value={item.name} onChange={(e) => updateItem(item.key, { name: e.target.value })} placeholder="Zapatos Nike Air Max blancos talla 8" />
+                    <input id={`item-name-${item.key}`} className="input-field" list="catalog-products" value={item.name} onChange={(e) => updateItem(item.key, { name: e.target.value })} placeholder="Zapatos Nike Air Max blancos talla 8" />
                   </div>
                   <div className="input-container">
                     <label>Precio en tienda ($) *</label>
@@ -251,6 +260,7 @@ export default function OrderForm({ clients, catalog, settings, initialClientId,
                 )}
               </div>
             ))}
+            <button type="button" className="btn btn-secondary" style={{ width: '100%', borderStyle: 'dashed' }} onClick={addItem}>+ Agregar producto</button>
           </div>
 
           {type === 'CART' && (

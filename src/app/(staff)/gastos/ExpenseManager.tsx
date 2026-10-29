@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Modal from '@/components/Modal';
 import ActionButton from '@/components/ui/ActionButton';
 import { toast } from '@/components/ui/Toast';
+import ReceiptUploader, { type ReceiptFile } from '@/components/ui/ReceiptUploader';
 import { createExpense, deleteExpense, updateExpense } from '@/app/actions/expenses';
 import { CATEGORY_LABEL } from './categories';
 
@@ -17,6 +18,7 @@ export interface ExpenseRow {
   country: string;
   originalAmount: number;
   adjustedAmount: number;
+  receipts: ReceiptFile[];
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -44,6 +46,7 @@ export function ExpenseModal({
   const [country, setCountry] = useState(expense?.country ?? '');
   const [amount, setAmount] = useState(expense ? String(expense.originalAmount) : '');
   const [adjusted, setAdjusted] = useState(expense && expense.adjustedAmount !== expense.originalAmount ? String(expense.adjustedAmount) : '');
+  const [receipts, setReceipts] = useState<ReceiptFile[]>(expense?.receipts ?? []);
 
   function openModal() {
     // Al reabrir se parte de los datos guardados, no de una edición cancelada.
@@ -53,6 +56,7 @@ export function ExpenseModal({
     setCountry(expense?.country ?? '');
     setAmount(expense ? String(expense.originalAmount) : '');
     setAdjusted(expense && expense.adjustedAmount !== expense.originalAmount ? String(expense.adjustedAmount) : '');
+    setReceipts(expense?.receipts ?? []);
     setOpen(true);
   }
 
@@ -64,6 +68,7 @@ export function ExpenseModal({
       country,
       originalAmount: parseFloat(amount),
       adjustedAmount: adjusted.trim() === '' ? null : parseFloat(adjusted),
+      receiptPaths: receipts.map((r) => r.path),
     };
     startTransition(async () => {
       try {
@@ -127,6 +132,7 @@ export function ExpenseModal({
             <label>Descripción *</label>
             <input className="input-field" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ej.: Flete aéreo semana 42" required />
           </div>
+          <ReceiptUploader value={receipts} onChange={setReceipts} />
           <div className="row" style={{ justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-secondary" onClick={() => setOpen(false)}>Cancelar</button>
             <button type="submit" className="btn btn-mint" disabled={pending}>{pending ? '⏳…' : expense ? 'Guardar cambios' : 'Registrar gasto'}</button>

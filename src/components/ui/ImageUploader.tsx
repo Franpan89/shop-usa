@@ -18,7 +18,7 @@ interface ImageUploaderProps {
 }
 
 /** Reduce fotos de celular (varios MB) a un JPEG liviano antes de subirlas. */
-async function compress(file: File, maxSide = 1600, quality = 0.82): Promise<Blob> {
+export async function compress(file: File, maxSide = 1600, quality = 0.82): Promise<Blob> {
   if (file.type === 'application/pdf') return file;
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));

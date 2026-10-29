@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import PasswordInput from '@/components/ui/PasswordInput';
 
 export default function SetPasswordForm() {
   const router = useRouter();
@@ -47,11 +48,11 @@ export default function SetPasswordForm() {
       )}
       <div className="input-container">
         <label>Nueva contraseña</label>
-        <input name="password" type="password" className="input-field" required minLength={8} autoFocus />
+        <PasswordInput name="password" required minLength={8} autoFocus autoComplete="new-password" />
       </div>
       <div className="input-container">
         <label>Confirmar contraseña</label>
-        <input name="confirm" type="password" className="input-field" required minLength={8} />
+        <PasswordInput name="confirm" required minLength={8} autoComplete="new-password" />
       </div>
       <button type="submit" className="btn" disabled={isPending} style={{ marginTop: '8px' }}>
         {isPending ? 'Guardando...' : 'Guardar y continuar'}

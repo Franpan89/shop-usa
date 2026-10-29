@@ -44,6 +44,16 @@ export default function CasilleroReception({ clients, fees }: { clients: Casille
   const update = (key: number, patch: Partial<Line>) => setLines((p) => p.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const ready = lines.every((l) => l.name.trim() && parseInt(l.quantity, 10) >= 1 && l.imageUrl);
 
+  /** El botón vive debajo del último producto; el nuevo se muestra y queda listo para escribir. */
+  function addLine() {
+    const line = emptyLine();
+    setLines((p) => [...p, line]);
+    setTimeout(() => {
+      document.getElementById(`line-${line.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById(`line-name-${line.key}`)?.focus({ preventScroll: true });
+    }, 50);
+  }
+
   function saveItems() {
     startTransition(async () => {
       const res = await createCasilleroItems(clientId, lines.map((l) => ({ name: l.name, quantity: parseInt(l.quantity, 10), imageUrl: l.imageUrl })));
@@ -116,15 +126,14 @@ export default function CasilleroReception({ clients, fees }: { clients: Casille
                 <h2 className="panel-title">Productos recibidos</h2>
                 <p className="panel-sub">Descripción, cantidad y foto son obligatorias. Fecha y origen (Casillero) son automáticos.</p>
               </div>
-              <button className="btn btn-secondary btn-sm" onClick={() => setLines((p) => [...p, emptyLine()])}>+ Otro producto</button>
             </div>
             <div className="stack">
               {lines.map((l, idx) => (
-                <div key={l.key} className="group-card" style={{ padding: 14 }}>
+                <div key={l.key} id={`line-${l.key}`} className="group-card" style={{ padding: 14 }}>
                   <div className="form-grid">
                     <div className="input-container span-2">
                       <label>Descripción *</label>
-                      <input className="input-field" value={l.name} onChange={(e) => update(l.key, { name: e.target.value })} placeholder="Zapatos Nike" />
+                      <input id={`line-name-${l.key}`} className="input-field" value={l.name} onChange={(e) => update(l.key, { name: e.target.value })} placeholder="Zapatos Nike" />
                     </div>
                     <div className="input-container">
                       <label>Cantidad *</label>
@@ -137,6 +146,7 @@ export default function CasilleroReception({ clients, fees }: { clients: Casille
                   )}
                 </div>
               ))}
+              <button type="button" className="btn btn-secondary" style={{ width: '100%', borderStyle: 'dashed' }} onClick={addLine}>+ Otro producto</button>
             </div>
             <div className="row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
               <button className="btn" disabled={pending || !ready} onClick={saveItems}>{pending ? '⏳ Guardando…' : `Guardar ${lines.length} producto(s)`}</button>

@@ -68,6 +68,9 @@ function form(entries: Record<string, string>) {
   return fd;
 }
 
+/** Ficha de cliente: la fecha de nacimiento es obligatoria al crear. */
+const clientForm = (entries: Record<string, string>) => form({ birthdayMonth: '5', birthdayDay: '14', ...entries });
+
 async function cleanup() {
   const ids = created.clients;
   if (ids.length === 0) return;
@@ -102,17 +105,19 @@ async function main() {
   const stamp = Date.now().toString().slice(-6);
 
   console.log('Etapa 1 — clientes');
-  const aRes = ok(await createClient(form({ name: `E2E Ana ${stamp}`, phone: '+593 99 000 0001', country: 'Ecuador', city: 'Quito', serviceFeePercent: '20', shippingCategoryId: general.id })), 'crear Ana');
+  const aRes = ok(await createClient(clientForm({ name: `E2E Ana ${stamp}`, phone: '+593 99 000 0001', country: 'Ecuador', city: 'Quito', serviceFeePercent: '20', shippingCategoryId: general.id })), 'crear Ana');
   created.clients.push(aRes.clientId);
   assert.match(aRes.code, /^EC\d{3,}$/);
   step(`código automático ${aRes.code}`);
-  const bRes = ok(await createClient(form({ name: `E2E Beto ${stamp}`, phone: '+593 99 000 0002', country: 'Ecuador', city: 'Cuenca', serviceFeePercent: '10', shippingCategoryId: general.id, referredById: aRes.clientId })), 'crear Beto');
+  const bRes = ok(await createClient(clientForm({ name: `E2E Beto ${stamp}`, phone: '+593 99 000 0002', country: 'Ecuador', city: 'Cuenca', serviceFeePercent: '10', shippingCategoryId: general.id, referredById: aRes.clientId })), 'crear Beto');
   created.clients.push(bRes.clientId);
   assert.notEqual(aRes.code, bRes.code);
   step(`códigos únicos y consecutivos (${aRes.code}, ${bRes.code})`);
-  blocked(await createClient(form({ name: 'X', phone: '1', country: 'Ecuador', shippingCategoryId: panama.id })), 'no corresponde al país', 'tarifa de otro país');
+  blocked(await createClient(form({ name: 'X', phone: '1', country: 'Ecuador', shippingCategoryId: general.id })), 'nacimiento', 'fecha de nacimiento obligatoria al crear');
+  step('la fecha de nacimiento es obligatoria al crear el cliente');
+  blocked(await createClient(clientForm({ name: 'X', phone: '1', country: 'Ecuador', shippingCategoryId: panama.id })), 'no corresponde al país', 'tarifa de otro país');
   step('la tarifa debe corresponder al país del cliente');
-  const pRes = ok(await createClient(form({ name: `E2E Pía ${stamp}`, phone: '+507 6000 0003', country: 'Panamá', city: 'Ciudad de Panamá', serviceFeePercent: '20', shippingCategoryId: panama.id })), 'crear Pía');
+  const pRes = ok(await createClient(clientForm({ name: `E2E Pía ${stamp}`, phone: '+507 6000 0003', country: 'Panamá', city: 'Ciudad de Panamá', serviceFeePercent: '20', shippingCategoryId: panama.id })), 'crear Pía');
   created.clients.push(pRes.clientId);
   assert.match(pRes.code, /^PTY\d{3,}$/);
   step(`prefijo por país (${pRes.code})`);
@@ -319,7 +324,7 @@ async function main() {
   step('Medium $4, Large $5; delivery de 8 millas = $15 + 3 × $1.50 = $19.50 en su cuenta');
 
   console.log('Tarifa Emprendedores — libra completa');
-  const cEmp = ok(await createClient(form({ name: `E2E Emi ${stamp}`, phone: '+593 99 000 0004', country: 'Ecuador', serviceFeePercent: '20', shippingCategoryId: emprendedor.id })), 'Emi');
+  const cEmp = ok(await createClient(clientForm({ name: `E2E Emi ${stamp}`, phone: '+593 99 000 0004', country: 'Ecuador', serviceFeePercent: '20', shippingCategoryId: emprendedor.id })), 'Emi');
   created.clients.push(cEmp.clientId);
   ok(await createCasilleroItems(cEmp.clientId, [{ name: 'Mercadería', quantity: 3, imageUrl: 'https://example.test/m.jpg' }]), 'Emi casillero');
   const ec = await prisma.consolidation.findFirstOrThrow({ where: { clientId: cEmp.clientId, status: 'OPEN' } });
@@ -352,8 +357,8 @@ async function main() {
   step('rechazar no da acceso y no se puede atender dos veces');
   await prisma.client.update({ where: { id: bRes.clientId }, data: { email: mail('beto') } });
   blocked(await requestPortalAccess(form({ code: bRes.code, email: mail('otro'), phone: '+593 99 000 0002' })), 'ya tiene un correo registrado', 'código con correo');
-  blocked(await createClient(form({ name: 'Dup', phone: '1', country: 'Ecuador', email: mail('beto') })), 'otro cliente', 'correo repetido al crear cliente');
-  blocked(await createClient(form({ name: 'Dup', phone: '1', country: 'Ecuador', email: staffEmail })), 'equipo', 'correo de staff al crear cliente');
+  blocked(await createClient(clientForm({ name: 'Dup', phone: '1', country: 'Ecuador', email: mail('beto') })), 'otro cliente', 'correo repetido al crear cliente');
+  blocked(await createClient(clientForm({ name: 'Dup', phone: '1', country: 'Ecuador', email: staffEmail })), 'equipo', 'correo de staff al crear cliente');
   step('un código con correo ligado no admite otro; el correo no se repite entre clientes ni con el equipo');
   (globalThis as unknown as { __e2ePortal?: unknown }).__e2ePortal = { kind: 'portal', id: aRes.clientId, name: 'Ana', email: mail('ana') };
   blocked(await portalSubmitTransfer({ amount: 5, proofPath: '2026/x.jpg', targetInvoiceId: order1.invoice!.id }), 'Factura inválida', 'pagar factura ajena');
@@ -393,7 +398,7 @@ async function main() {
     (globalThis as unknown as { __e2ePortal?: unknown }).__e2ePortal = c ? { kind: 'portal', ...c } : undefined;
   };
 
-  const cCard = ok(await createClient(form({ name: `E2E Carla ${stamp}`, phone: '+593 99 000 0005', country: 'Ecuador', city: 'Cuenca', serviceFeePercent: '20', shippingCategoryId: general.id })), 'Carla');
+  const cCard = ok(await createClient(clientForm({ name: `E2E Carla ${stamp}`, phone: '+593 99 000 0005', country: 'Ecuador', city: 'Cuenca', serviceFeePercent: '20', shippingCategoryId: general.id })), 'Carla');
   created.clients.push(cCard.clientId);
   const oCard = ok(await createOrder({ clientId: cCard.clientId, type: 'PERSONAL_SHOPPER', items: [{ name: 'Bolso', quantity: 1, unitPrice: 40 }] }), 'pedido Carla');
   const invCard = (await prisma.order.findUniqueOrThrow({ where: { id: oCard.orderId }, include: { invoice: true } })).invoice!;

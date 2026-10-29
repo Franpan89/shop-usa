@@ -768,6 +768,8 @@ model Expense {
   country        String
   originalAmount Float
   adjustedAmount Float
+  /// Fotos del recibo (rutas en el bucket privado de Storage); un recibo largo puede ir en varias fotos.
+  receiptPaths   String[] @default([])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

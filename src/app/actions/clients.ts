@@ -68,6 +68,9 @@ export const createClient = safe(async function createClient(formData: FormData)
   const city = str(formData, 'city');
   const phone = str(formData, 'phone');
   if (!name || !country || !phone) throw new Error('Nombre, teléfono y país son obligatorios');
+  // Obligatoria al crear (se usa para saludos y promociones); los clientes importados sin fecha se completan al editarlos.
+  const birthday = parseBirthday(formData);
+  if (!birthday) throw new Error('La fecha de nacimiento (mes y día) es obligatoria');
 
   const settings = await getSettings();
   const serviceParsed = parseFloat(str(formData, 'serviceFeePercent'));
@@ -93,7 +96,7 @@ export const createClient = safe(async function createClient(formData: FormData)
         country,
         city,
         phone,
-        birthday: parseBirthday(formData),
+        birthday,
         notes: optional(formData, 'notes'),
         deliveryMethod: formData.get('deliveryMethod') === 'HOME_DELIVERY' ? 'HOME_DELIVERY' : 'STORE_PICKUP',
         deliveryAddress: optional(formData, 'deliveryAddress'),

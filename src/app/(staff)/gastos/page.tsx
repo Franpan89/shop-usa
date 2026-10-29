@@ -4,6 +4,7 @@ import { requireStaff } from '@/lib/auth';
 import { INVOICE_TYPE } from '@/lib/domain/flow';
 import { invoiceCode } from '@/lib/logistics';
 import { getCountryRules } from '@/lib/tenant';
+import { signedReceiptUrls } from '@/lib/storage';
 import { CATEGORY_LABEL } from './categories';
 import { DeleteExpenseButton, ExpenseModal, PrintButton, type ExpenseRow } from './ExpenseManager';
 
@@ -51,6 +52,7 @@ export default async function ContabilidadPage({ searchParams }: { searchParams:
   const totalGastos = allExpenses.reduce((sum, e) => sum + (e.originalAmount ?? 0), 0);
   const totalFiltrado = expenses.reduce((sum, e) => sum + (e.originalAmount ?? 0), 0);
   const filtrando = Boolean(desde || hasta || categoryFilter);
+  const receiptUrls = await signedReceiptUrls(expenses.flatMap((e) => e.receiptPaths));
   const rows: ExpenseRow[] = expenses.map((e) => ({
     id: e.id,
     date: isoDate(e.expenseDate),
@@ -59,6 +61,7 @@ export default async function ContabilidadPage({ searchParams }: { searchParams:
     country: e.country,
     originalAmount: e.originalAmount,
     adjustedAmount: e.adjustedAmount,
+    receipts: e.receiptPaths.map((path) => ({ path, url: receiptUrls.get(path) ?? null, isPdf: path.endsWith('.pdf') })),
   }));
   const utilidad = totalVentas - totalGastos;
   const utilidadNeta = totalCobrado - totalGastos;
@@ -180,6 +183,7 @@ export default async function ContabilidadPage({ searchParams }: { searchParams:
               <th>PAÍS</th>
               <th>VALOR ORIGINAL</th>
               <th>VALOR AJUSTADO</th>
+              <th>RECIBOS</th>
               <th>ACCIONES</th>
             </tr>
           </thead>
@@ -199,6 +203,24 @@ export default async function ContabilidadPage({ searchParams }: { searchParams:
                 <td>{expense.country || 'General'}</td>
                 <td><strong style={{ color: 'var(--color-danger)' }}>${expense.originalAmount.toFixed(2)}</strong></td>
                 <td><strong style={{ color: 'var(--color-danger)' }}>${expense.adjustedAmount.toFixed(2)}</strong></td>
+                <td>
+                  {expense.receipts.length === 0 ? (
+                    <span className="muted">—</span>
+                  ) : (
+                    <div className="row" style={{ gap: 6 }}>
+                      {expense.receipts.map((r, i) => (
+                        <a key={r.path} href={r.url ?? undefined} target="_blank" rel="noreferrer" title={`Ver foto ${i + 1} de ${expense.receipts.length}`}>
+                          {r.url && !r.isPdf ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={r.url} alt={`Recibo ${i + 1}`} className="thumb" />
+                          ) : (
+                            <span className="thumb" aria-hidden>📎</span>
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </td>
                 <td style={{ display: 'flex', gap: '8px' }}>
                   <ExpenseModal expense={expense} countries={countries} trigger="✏️" triggerClassName="btn btn-secondary" triggerTitle="Editar" />
                   <DeleteExpenseButton id={expense.id} description={expense.description} />
@@ -207,7 +229,7 @@ export default async function ContabilidadPage({ searchParams }: { searchParams:
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                   {filtrando ? 'No hay gastos con esos filtros.' : 'Aún no hay gastos registrados. Usa “+ Nuevo Gasto”.'}
                 </td>
               </tr>

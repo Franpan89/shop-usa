@@ -120,15 +120,15 @@ export default function ClientForm({ client, categories, countries, referrers, d
             <input name="city" className="input-field" defaultValue={client?.city} />
           </div>
           <div className="input-container">
-            <label>Cumpleaños (mes y día)</label>
+            <label>Fecha de nacimiento (mes y día){isEdit ? '' : ' *'}</label>
             <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
-              <select name="birthdayMonth" className="input-field grow" defaultValue={client?.birthdayMonth ?? ''}>
+              <select name="birthdayMonth" className="input-field grow" defaultValue={client?.birthdayMonth ?? ''} required={!isEdit}>
                 <option value="">Mes</option>
                 {MONTHS.map((m, i) => (
                   <option key={m} value={i + 1}>{m}</option>
                 ))}
               </select>
-              <select name="birthdayDay" className="input-field" defaultValue={client?.birthdayDay ?? ''} style={{ width: 84 }}>
+              <select name="birthdayDay" className="input-field" defaultValue={client?.birthdayDay ?? ''} style={{ width: 84 }} required={!isEdit}>
                 <option value="">Día</option>
                 {Array.from({ length: 31 }, (_, i) => (
                   <option key={i + 1} value={i + 1}>{i + 1}</option>
