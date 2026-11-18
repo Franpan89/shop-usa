@@ -7,7 +7,8 @@
  * schema defaults, real feature set) rather than guessed.
  */
 export const SITE = {
-  brand: "ShopUSA",
+  // Cada instancia (producción, demo, otros clientes) pone su marca por variable de entorno.
+  brand: process.env.NEXT_PUBLIC_BRAND_NAME || "ShopUSA",
 
   // CONFIRM: real WhatsApp number in E.164, and the inbox that should receive
   // the contact-form leads.
@@ -35,5 +36,8 @@ export const SITE = {
   },
 } as const;
 
-export const whatsappHref = (message: string) =>
+/** Nombre del negocio tal como aparece en los textos internos ("Shop USA no adelanta dinero…"). */
+export const OPERATOR = process.env.NEXT_PUBLIC_BRAND_NAME || "Shop USA";
+
+export const whatsappHref =(message: string) =>
   `https://wa.me/${SITE.whatsappNumber.replace(/[^\d]/g, "")}?text=${encodeURIComponent(message)}`;

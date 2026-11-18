@@ -7,6 +7,7 @@ import { ORDER_TYPE } from '@/lib/domain/flow';
 import { Alert, Empty, PageHeader, Tabs } from '@/components/ui/kit';
 import SearchFilter from '@/components/SearchFilter';
 import PurchaseList, { type PurchaseGroup } from './PurchaseList';
+import { OPERATOR } from '@/config/site';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,7 +77,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="Compras" subtitle="Lo que Shop USA puede comprar hoy: solo productos de pedidos con el pago aprobado." />
+      <PageHeader title="Compras" subtitle={`Lo que ${OPERATOR} puede comprar hoy: solo productos de pedidos con el pago aprobado.`} />
       <Tabs
         items={[
           { href: '/compras?vista=listos', label: 'Listos para comprar', count: readyCount, active: vista === 'listos' },
@@ -85,7 +86,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
       />
       <div className="filter-bar"><SearchFilter placeholder="Producto, tienda, cliente o código…" /></div>
 
-      {vista === 'bloqueados' && <Alert tone="warning">Estos productos <strong>no se deben comprar</strong>: el pedido todavía no tiene el pago aprobado. Shop USA no adelanta dinero.</Alert>}
+      {vista === 'bloqueados' && <Alert tone="warning">Estos productos <strong>no se deben comprar</strong>: el pedido todavía no tiene el pago aprobado. {OPERATOR} no adelanta dinero.</Alert>}
 
       {byOrder.size === 0 ? (
         <div className="glass-panel static">

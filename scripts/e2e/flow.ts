@@ -13,8 +13,13 @@ import { markProductsPurchased, receiveProducts, setProductPhoto, createCasiller
 import { closeConsolidation, setConsolidationWeight, setConsolidationDecision } from '@/app/actions/consolidations';
 import {
   addPkgsToDispatch, assignProductsToPkg, closePkg, confirmDispatch, confirmProductsArrived, createDispatch, createPkg,
-  markProductsDelivered, receivePkgsAtDestination,
+  deletePkg, markProductsDelivered, receivePkgsAtDestination, updatePkgInfo,
 } from '@/app/actions/logistics';
+import {
+  createConsignee, createGuide, createShipper, deleteConsignee, deleteShipper, generatePkgGuide,
+  registerGuidePrints, setGuideStatus, updateGuide, voidGuide,
+} from '@/app/actions/guides';
+import { getLabelData } from '@/lib/guides';
 import { setCustodyActive, deliverCustodyPackages } from '@/app/actions/custody';
 import { portalSetDecision, portalSubmitTransfer } from '@/app/actions/portal';
 import { rejectAccessRequest, requestPortalAccess } from '@/app/actions/access';
@@ -25,7 +30,7 @@ import { getClientAccount, getStatement } from '@/lib/accounting';
 import { runningBalances } from '@/lib/domain/ledger';
 
 type Res = { ok: true } | { ok: false; error: string };
-const created = { clients: [] as string[], pkgs: [] as string[], dispatches: [] as string[] };
+const created = { clients: [] as string[], pkgs: [] as string[], dispatches: [] as string[], shippers: [] as string[] };
 let passed = 0;
 // La prueba asume las reglas de Panamá del documento; si Configuraciones las cambió, las fija y las devuelve al terminar.
 let panamaRuleBackup: { id: string; allowDispatchWithBalance: boolean; usesDeconsolidation: boolean } | null = null;
@@ -72,6 +77,12 @@ function form(entries: Record<string, string>) {
 const clientForm = (entries: Record<string, string>) => form({ birthdayMonth: '5', birthdayDay: '14', ...entries });
 
 async function cleanup() {
+  // Guías de prueba: las IFL se borran por remitente; las de PKG se van con su PKG (en cascada).
+  if (created.shippers.length) {
+    await prisma.guide.deleteMany({ where: { shipperId: { in: created.shippers } } });
+    await prisma.consignee.deleteMany({ where: { shipperId: { in: created.shippers } } });
+    await prisma.shipper.deleteMany({ where: { id: { in: created.shippers } } });
+  }
   const ids = created.clients;
   if (ids.length === 0) return;
   await prisma.cardCheckout.deleteMany({ where: { clientId: { in: ids } } });
@@ -462,6 +473,111 @@ async function main() {
   assert.equal(verifyWebhookSignature({ body, signature: goodSig, url, key: '' }), false);
   step('la firma del webhook solo vale para ese cuerpo, esa URL y esa clave');
   globalThis.fetch = realFetch;
+
+
+  console.log('Etapa 10 — guías (etiquetas térmicas 4x6)');
+  blocked(await createShipper({ name: '   ' }), 'nombre', 'remitente sin nombre');
+  const sh = ok(await createShipper({ name: `e2e remitente ${stamp}`, idNumber: '0100000001', address: '1 test st', city: 'orlando', state: 'Florida', phone: '8630000001' }), 'crear remitente');
+  created.shippers.push(sh.shipperId);
+  assert.equal(sh.name, `E2E REMITENTE ${stamp}`);
+  const sh2 = ok(await createShipper({ name: `e2e otro remitente ${stamp}` }), 'crear 2º remitente');
+  created.shippers.push(sh2.shipperId);
+  const co = ok(await createConsignee(sh.shipperId, { name: 'e2e destinataria', idNumber: '0107300030', country: 'ecuador', province: 'azuay', city: 'cuenca', declaredAddress: 'calle del batan', phone: '0974268718' }), 'crear destinatario');
+  const co2 = ok(await createConsignee(sh2.shipperId, { name: 'e2e destinatario ajeno' }), 'destinatario del otro remitente');
+  step('remitente y destinatario se guardan en mayúsculas; el nombre es obligatorio');
+
+  const base = { shipperId: sh.shipperId, consigneeId: co.consigneeId, contents: 'zapatos prendas de vestir', itemCount: 1, weightLb: 8.25, declaredValue: 200 };
+  const g1 = ok(await createGuide(base), 'crear guía 1');
+  const g2 = ok(await createGuide({ ...base, retain: true, clientTracking: `evg${stamp}` }), 'crear guía 2');
+  assert.match(g1.code, /^IFLWH\d{5}$/);
+  const n1 = Number(g1.code.slice(5));
+  assert.ok(n1 >= 100, 'la serie IFL no baja de IFLWH00100');
+  assert.equal(g2.code, `IFLWH${String(n1 + 1).padStart(5, '0')}`);
+  const guideRow2 = await prisma.guide.findUniqueOrThrow({ where: { id: g2.guideId } });
+  assert.equal(guideRow2.status, 'RETAINED');
+  assert.equal(guideRow2.contents, 'ZAPATOS PRENDAS DE VESTIR');
+  step(`serie IFL consecutiva (${g1.code}, ${g2.code}); "retener en bodega" deja la guía RETENIDA`);
+
+  blocked(await createGuide({ ...base, consigneeId: co2.consigneeId }), 'otro remitente', 'destinatario de otro remitente');
+  blocked(await createGuide({ ...base, weightLb: 0 }), 'peso', 'peso en cero');
+  blocked(await createGuide({ ...base, deliverElsewhere: true, finalDeliveryAddress: ' ' }), 'dirección', 'entrega final sin dirección');
+  blocked(await createGuide({ ...base, shipperId: undefined }), 'remitente', 'sin remitente');
+  step('rechaza destinatario de otro remitente, peso en cero y entrega final sin dirección');
+  assert.equal(await prisma.guide.count({ where: { shipperId: sh.shipperId } }), 2, 'un intento rechazado no crea guía');
+  step('un intento rechazado no crea guía');
+
+  ok(await updateGuide(g1.guideId, { ...base, weightLb: 9.5, deliverElsewhere: true, finalDeliveryAddress: 'av loja y solano' }), 'editar guía');
+  const edited = await prisma.guide.findUniqueOrThrow({ where: { id: g1.guideId } });
+  assert.equal(edited.weightLb, 9.5);
+  assert.equal(edited.finalDeliveryAddress, 'AV LOJA Y SOLANO');
+  step('editar la guía actualiza peso y entrega final');
+
+  ok(await setGuideStatus(g2.guideId, 'CREATED'), 'liberar guía');
+  ok(await setGuideStatus(g2.guideId, 'IN_TRANSIT'), 'en tránsito');
+  blocked(await setGuideStatus(g2.guideId, 'VOIDED'), 'no permitido', 'anular por cambio de estado');
+  step('liberar y mover la guía de estado; anular solo por "Anular"');
+
+  ok(await registerGuidePrints([g1.guideId, g1.guideId]), 'registrar impresión');
+  assert.equal((await prisma.guide.findUniqueOrThrow({ where: { id: g1.guideId } })).printCount, 1);
+  step('reimprimir lleva la cuenta de impresiones');
+
+  const labels = await getLabelData([g1.guideId, 'no-existe']);
+  assert.equal(labels.length, 1);
+  assert.equal(labels[0].code, g1.code);
+  assert.equal(labels[0].destination, 'CUENCA, AZUAY, ECUADOR');
+  assert.equal(labels[0].countryTag, 'EC');
+  assert.ok(labels[0].toLines.some((l) => l.startsWith('ENTREGAR EN: AV LOJA')));
+  step('la etiqueta trae destino, país y la dirección de entrega final');
+
+  blocked(await deleteShipper(sh.shipperId), 'ya tiene', 'remitente con guías');
+  blocked(await deleteConsignee(co.consigneeId), 'ya tiene', 'destinatario con guías');
+  ok(await voidGuide(g2.guideId, 'error de digitación'), 'anular guía');
+  blocked(await voidGuide(g2.guideId, ''), 'ya está anulada', 'anular dos veces');
+  blocked(await updateGuide(g2.guideId, base), 'anulada', 'editar guía anulada');
+  const g3 = ok(await createGuide(base), 'guía después de anular');
+  assert.equal(g3.code, `IFLWH${String(n1 + 2).padStart(5, '0')}`, 'el número de una guía anulada no se reutiliza');
+  step('con guías no se borra remitente ni destinatario; anular conserva el número (no se reutiliza)');
+  ok(await deleteConsignee(co2.consigneeId), 'borrar destinatario sin guías');
+  ok(await deleteShipper(sh2.shipperId), 'borrar remitente sin guías');
+  created.shippers = created.shippers.filter((id) => id !== sh2.shipperId);
+  step('un remitente sin guías sí se puede eliminar');
+
+  // Serie PKG: la guía lleva el número de la caja y se crea con ella (o después).
+  const pkgG = ok(await createPkg({ country: 'Ecuador', createGuide: true }), 'PKG con guía');
+  created.pkgs.push(pkgG.pkgId);
+  assert.ok(pkgG.guideId);
+  const pkgRow = await prisma.pkg.findUniqueOrThrow({ where: { id: pkgG.pkgId } });
+  const guideP = await prisma.guide.findUniqueOrThrow({ where: { id: pkgG.guideId! } });
+  assert.equal(guideP.series, 'PKG');
+  assert.equal(guideP.code, `PKG${pkgRow.number}`);
+  assert.equal(guideP.number, pkgRow.number);
+  step(`al crear el PKG con la opción, la guía sale sola (${guideP.code})`);
+
+  const maxPkg = await prisma.pkg.aggregate({ _max: { number: true } });
+  const moved = (maxPkg._max.number ?? 0) + 7;
+  ok(await updatePkgInfo(pkgG.pkgId, { number: moved }), 'renumerar PKG');
+  assert.equal((await prisma.guide.findUniqueOrThrow({ where: { id: pkgG.guideId! } })).code, `PKG${moved}`);
+  step('si el PKG cambia de número, su guía lo sigue');
+
+  const plain = ok(await createPkg({ country: 'Ecuador' }), 'PKG sin guía');
+  created.pkgs.push(plain.pkgId);
+  assert.equal(plain.guideId, null);
+  assert.equal(await prisma.guide.count({ where: { pkgId: plain.pkgId } }), 0);
+  const late = ok(await generatePkgGuide(plain.pkgId), 'generar guía después');
+  const again = ok(await generatePkgGuide(plain.pkgId), 'generar guía otra vez');
+  assert.equal(late.guideId, again.guideId);
+  assert.equal(await prisma.guide.count({ where: { pkgId: plain.pkgId } }), 1);
+  blocked(await setGuideStatus(late.guideId, 'IN_TRANSIT'), 'sigue el estado', 'estado manual en guía de PKG');
+  blocked(await voidGuide(late.guideId, ''), 'junto con el pkg', 'anular guía de PKG');
+  const pkgLabel = (await getLabelData([late.guideId]))[0];
+  assert.equal(pkgLabel.series, 'PKG');
+  assert.equal(pkgLabel.destination, 'ECUADOR');
+  step('un PKG sin guía la genera después (una sola vez); la guía de caja sigue el estado del PKG');
+
+  ok(await deletePkg(plain.pkgId), 'borrar PKG vacío');
+  assert.equal(await prisma.guide.count({ where: { id: late.guideId } }), 0);
+  created.pkgs = created.pkgs.filter((id) => id !== plain.pkgId);
+  step('borrar un PKG vacío borra también su guía');
 
   console.log(`\n${passed} verificaciones de punta a punta superadas.`);
 }

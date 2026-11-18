@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { requestPortalAccess } from '@/app/actions/access';
+import { OPERATOR } from '@/config/site';
 
 export default function RegistroForm() {
   const [isPending, setIsPending] = useState(false);
@@ -46,7 +47,7 @@ export default function RegistroForm() {
         <input name="code" className="input-field" placeholder="EC001" required autoFocus autoCapitalize="characters" autoComplete="off" maxLength={14} />
       </div>
       <div className="input-container">
-        <label>Teléfono registrado en Shop USA</label>
+        <label>Teléfono registrado en {OPERATOR}</label>
         <input name="phone" type="tel" className="input-field" placeholder="+593 99 123 4567" required maxLength={40} autoComplete="tel" />
       </div>
       <div className="input-container">

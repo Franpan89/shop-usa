@@ -9,6 +9,7 @@
     "lint": "next lint",
     "postinstall": "prisma generate",
     "seed": "npx tsx prisma/seed.ts",
+    "seed:demo": "tsx --env-file=.env.demo prisma/seed.ts && tsx --env-file=.env.demo --tsconfig scripts/tsconfig.e2e.json scripts/seed-demo.ts",
     "test": "tsx --test src/lib/domain/*.test.ts",
     "e2e": "tsx --env-file=.env --tsconfig scripts/tsconfig.e2e.json scripts/e2e/flow.ts"
   },

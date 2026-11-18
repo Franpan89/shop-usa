@@ -18,6 +18,8 @@ interface NavItem {
   href: string;
   icon: string;
   count?: keyof NavCounts;
+  /** Solo activo en esa ruta exacta (para que "Ver guías" no se encienda dentro de "Crear guía"). */
+  exact?: boolean;
 }
 
 interface NavGroup {
@@ -55,6 +57,14 @@ export default function Sidebar({ role, userName, counts = {} }: SidebarProps) {
         { name: "Despachos", href: "/despachos", icon: "🚚" },
         { name: "Desconsolidación", href: "/desconsolidacion", icon: "🗂️", count: "desconsolidacion" },
         { name: "Entregas", href: "/entregas", icon: "🤝", count: "entregas" },
+      ],
+    },
+    {
+      title: "Guías",
+      items: [
+        { name: "Crear guía", href: "/guias/nueva", icon: "🏷️" },
+        { name: "Ver guías", href: "/guias", icon: "📋", exact: true },
+        { name: "Remitentes y destinatarios", href: "/guias/remitentes", icon: "📇" },
       ],
     },
     {
@@ -99,9 +109,15 @@ export default function Sidebar({ role, userName, counts = {} }: SidebarProps) {
     };
   }, [open]);
 
-  const activeItem = groups.flatMap((g) => g.items).find((l) => pathname === l.href || pathname.startsWith(l.href + "/"));
+  const matches = (l: { href: string; exact?: boolean }) =>
+    pathname === l.href || (!l.exact && pathname.startsWith(l.href + "/"));
+  // Si varias rutas coinciden (/guias y /guias/nueva), gana la más específica.
+  const activeItem = groups
+    .flatMap((g) => g.items)
+    .filter(matches)
+    .sort((a, b) => b.href.length - a.href.length)[0];
   const totalPending = Object.values(counts).reduce<number>((s, n) => s + (n ?? 0), 0);
-  const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
+  const isActive = (href: string) => activeItem?.href === href || (!activeItem && (pathname === href || pathname.startsWith(href + "/")));
 
   // Atajos del menú inferior (celular): lo que más se usa a diario.
   const tabs: { name: string; href: string; icon: string; count?: keyof NavCounts }[] = [

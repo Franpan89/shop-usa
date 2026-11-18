@@ -15,6 +15,7 @@ import {
   setNextClientNumber,
 } from '@/app/actions/settings';
 import { createShippingCategory, updateShippingCategory } from '@/app/actions/shipping';
+import { OPERATOR } from '@/config/site';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +53,7 @@ export default async function ConfiguracionesPage({ searchParams }: { searchPara
 
   return (
     <>
-      <PageHeader title="Configuraciones" subtitle="Todo lo que Shop USA puede cambiar sin pedir un cambio de código: tarifas, tasas, reglas por país y políticas." />
+      <PageHeader title="Configuraciones" subtitle={`Todo lo que ${OPERATOR} puede cambiar sin pedir un cambio de código: tarifas, tasas, reglas por país y políticas.`} />
       <Tabs items={SECTIONS.map(([key, label]) => ({ href: `/configuraciones?seccion=${key}`, label, active: seccion === key }))} />
 
       {seccion === 'tarifas' && (
@@ -194,7 +195,7 @@ export default async function ConfiguracionesPage({ searchParams }: { searchPara
           </Panel>
           <Panel title="Códigos de cliente" subtitle="Se generan solos: prefijo del país + consecutivo. Un cliente = un código permanente.">
             <ActionForm action={setNextClientNumber} success="Consecutivo actualizado">
-              <div className="form-grid"><Field label="Próximo número de cliente" name="nextClientNumber" defaultValue={(clientCounter?.value ?? 0) + 1} step="1" min="1" hint="Útil para continuar la numeración que ya usaba Shop USA." /></div>
+              <div className="form-grid"><Field label="Próximo número de cliente" name="nextClientNumber" defaultValue={(clientCounter?.value ?? 0) + 1} step="1" min="1" hint={`Útil para continuar la numeración que ya usaba ${OPERATOR}.`} /></div>
               <button type="submit" className="btn btn-sm" style={{ marginTop: 14 }}>Guardar</button>
             </ActionForm>
           </Panel>

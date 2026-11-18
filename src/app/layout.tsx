@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Fraunces, Manrope, Yellowtail, DM_Sans } from "next/
 import "./globals.css";
 import "./ui-kit.css";
 import "./staff-responsive.css";
+import { SITE } from "@/config/site";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -43,8 +44,8 @@ const yellowtail = Yellowtail({
 
 export const metadata: Metadata = {
   title: {
-    default: "ShopUSA — Personal Shopper y Courier a Panamá y Ecuador",
-    template: "%s · ShopUSA",
+    default: SITE.brand === "ShopUSA" ? "ShopUSA — Personal Shopper y Courier a Panamá y Ecuador" : `${SITE.brand} — Sistema de gestión para courier y personal shopper`,
+    template: `%s · ${SITE.brand}`,
   },
   description:
     "Compra en tiendas de Estados Unidos y recíbelo en Panamá o Ecuador. Casillero en Miami, personal shopper, envíos por libra y portal de cliente con rastreo en tiempo real.",

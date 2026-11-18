@@ -12,6 +12,7 @@ import CopyButton from '@/components/ui/CopyButton';
 import PaymentReview from '@/components/finance/PaymentReview';
 import { RegisterPaymentModal } from '@/components/finance/FinanceModals';
 import { CancelOrderButton, CourtesyButton, PurchaseAllButton, PurchaseButton } from './OrderActions';
+import { OPERATOR } from '@/config/site';
 
 export const dynamic = 'force-dynamic';
 
@@ -91,7 +92,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       )}
 
       {order.status === 'CANCELLED' && <Alert tone="danger">Pedido cancelado{order.cancelReason ? `: ${order.cancelReason}` : ''}. Los pagos aplicados volvieron al saldo a favor del cliente.</Alert>}
-      {order.status === 'PENDING_PAYMENT' && <Alert tone="warning"><strong>Pendiente de pago.</strong> Shop USA no adelanta dinero: no compres estos productos hasta que el pago esté aprobado.</Alert>}
+      {order.status === 'PENDING_PAYMENT' && <Alert tone="warning"><strong>Pendiente de pago.</strong> {OPERATOR} no adelanta dinero: no compres estos productos hasta que el pago esté aprobado.</Alert>}
       {order.status === 'PAYMENT_REVIEW' && <Alert tone="info"><strong>Hay un comprobante por verificar.</strong> Confirma que el dinero esté en la cuenta y aprueba el pago más abajo.</Alert>}
       {order.courtesyAuthorized && <Alert tone="success"><strong>Compra autorizada a crédito</strong> por {order.courtesyAuthorizedBy} el {shortDate(order.courtesyAuthorizedAt)}. El saldo pendiente queda como cargo en la cuenta del cliente.</Alert>}
       {order.benefitUsed && <Alert tone="info">🎁 Esta factura usó un <strong>beneficio por referido</strong>: tasa de servicio {order.serviceFeePercent}% en lugar de {order.baseServiceFeePercent}%.</Alert>}

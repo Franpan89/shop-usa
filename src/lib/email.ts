@@ -6,6 +6,7 @@ const FROM = process.env.RESEND_FROM_EMAIL || 'ShopUSA <onboarding@resend.dev>';
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
 async function sendMail({ to, subject, html }: { to: string; subject: string; html: string }) {
+  if (process.env.DEMO_MODE === 'true') return; // demo: nunca se envían correos
   if (!resend) {
     console.warn(`[email] RESEND_API_KEY no configurado — se omitió el envío a ${to}: ${subject}`);
     return;
@@ -23,6 +24,7 @@ async function sendMail({ to, subject, html }: { to: string; subject: string; ht
  * son el único camino del cliente para entrar, así que si no salen hay que decírselo a quien lo pidió.
  */
 async function sendMailOrThrow({ to, subject, html }: { to: string; subject: string; html: string }) {
+  if (process.env.DEMO_MODE === 'true') return; // demo: nunca se envían correos
   if (!resend) throw new Error('El envío de correos no está configurado (falta RESEND_API_KEY)');
   const { error } = await resend.emails.send({ from: FROM, to, subject, html });
   if (error) {

@@ -36,6 +36,9 @@ model Tenant {
   auditLogs          AuditLog[]
   accessRequests     AccessRequest[]
   cardCheckouts      CardCheckout[]
+  shippers           Shipper[]
+  consignees         Consignee[]
+  guides             Guide[]
 }
 
 model User {
@@ -667,6 +670,8 @@ model Pkg {
   updatedAt DateTime @updatedAt
 
   products Product[]
+  /// Etiqueta térmica de la caja (serie PKG); se crea con el PKG o después.
+  guide    Guide?
 
   @@unique([tenantId, number])
 }
@@ -773,4 +778,124 @@ model Expense {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Guías: etiquetas térmicas 4x6 con código de barras.
+// Dos series: IFL (IFLWH00100, 00101…, con remitente y destinatario) y PKG (la guía de cada caja, mismo número que el PKG).
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum GuideSeries {
+  IFL
+  PKG
+}
+
+enum GuideStatus {
+  CREATED
+  RETAINED // retenida en bodega: no se despacha todavía
+  IN_TRANSIT
+  DELIVERED
+  VOIDED // anulada: el número no se reutiliza
+}
+
+enum IdKind {
+  CEDULA
+  PASSPORT
+  RUC
+}
+
+/// Quien envía desde Estados Unidos.
+model Shipper {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  name     String
+  idKind   IdKind @default(CEDULA)
+  idNumber String?
+  address  String?
+  city     String?
+  state    String? @default("Florida")
+  phone    String?
+  email    String?
+  active   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  consignees Consignee[]
+  guides     Guide[]
+
+  @@index([tenantId, name])
+}
+
+/// Quien recibe en destino; cada destinatario pertenece a un remitente.
+model Consignee {
+  id        String  @id @default(cuid())
+  tenantId  String
+  tenant    Tenant  @relation(fields: [tenantId], references: [id])
+  shipperId String
+  shipper   Shipper @relation(fields: [shipperId], references: [id])
+
+  name            String
+  idKind          IdKind  @default(CEDULA)
+  idNumber        String?
+  country         String  @default("Ecuador")
+  province        String?
+  city            String?
+  declaredAddress String? // la que va al manifiesto aduanero
+  deliveryAddress String? // dirección real de entrega, si siempre es otra
+  reference       String?
+  phone           String?
+  relationship    String? // HERMANO, MADRE…
+  active          Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guides Guide[]
+
+  @@index([shipperId])
+}
+
+model Guide {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  series GuideSeries
+  number Int
+  code   String // IFLWH00100 · PKG500
+  status GuideStatus @default(CREATED)
+
+  // Serie IFL: remitente y destinatario. Serie PKG: solo el PKG.
+  shipperId   String?
+  shipper     Shipper?   @relation(fields: [shipperId], references: [id])
+  consigneeId String?
+  consignee   Consignee? @relation(fields: [consigneeId], references: [id])
+  pkgId       String?    @unique
+  pkg         Pkg?       @relation(fields: [pkgId], references: [id], onDelete: Cascade)
+
+  contents             String?
+  itemCount            Int     @default(1)
+  weightLb             Float? // en la serie PKG, vacío = suma de los consolidados que lleva
+  declaredValue        Float?
+  clientTracking       String?
+  notes                String?
+  finalDeliveryAddress String? // si la entrega final es en otra dirección
+
+  printCount    Int       @default(0)
+  lastPrintedAt DateTime?
+  createdBy     String?
+  voidedAt      DateTime?
+  voidReason    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@unique([tenantId, series, number])
+  @@index([createdAt])
+  @@index([shipperId])
+  @@index([consigneeId])
 }

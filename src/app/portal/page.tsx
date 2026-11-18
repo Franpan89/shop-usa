@@ -11,6 +11,7 @@ import { isSquareConfigured } from '@/lib/square';
 import { PayActions, PortalDecision } from './PortalControls';
 
 import { nowMs } from '@/lib/clock';
+import { OPERATOR } from '@/config/site';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,7 +89,7 @@ export default async function PortalHome() {
             <div className="muted small">
               {cutoff ? (locked ? 'El cierre semanal ya pasó.' : <>Solicita la retención de tu mercancía antes del <strong>{longDateTime(cutoff)}</strong>. Si no lo haces, se despacha.</>) : 'Si no solicitas retención, tu mercancía continúa al despacho.'}
             </div>
-            <div className="muted small">La mercancía podrá mantenerse en consolidación por un período máximo aproximado de {settings.retentionMaxDays} días. Una vez alcanzado, Shop USA podrá solicitar el despacho para evitar acumulaciones prolongadas en bodega.</div>
+            <div className="muted small">La mercancía podrá mantenerse en consolidación por un período máximo aproximado de {settings.retentionMaxDays} días. Una vez alcanzado, {OPERATOR} podrá solicitar el despacho para evitar acumulaciones prolongadas en bodega.</div>
           </div>
         </Panel>
       )}

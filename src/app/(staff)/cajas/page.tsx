@@ -19,7 +19,7 @@ export default async function CajasPage({ searchParams }: { searchParams: Promis
   const [pkgs, pending, suggested] = await Promise.all([
     prisma.pkg.findMany({
       where: { tenantId, country: pais || undefined, status: estado ? (estado as 'CLOSED') : undefined },
-      include: { products: { where: { status: { not: 'CANCELLED' } }, select: { quantity: true, clientId: true } }, dispatch: { select: { id: true, number: true, country: true, date: true, status: true } } },
+      include: { guide: { select: { code: true } }, products: { where: { status: { not: 'CANCELLED' } }, select: { quantity: true, clientId: true } }, dispatch: { select: { id: true, number: true, country: true, date: true, status: true } } },
       orderBy: { number: 'desc' },
       take: 150,
     }),
@@ -49,7 +49,7 @@ export default async function CajasPage({ searchParams }: { searchParams: Promis
       <div className="glass-panel static table-container">
         <table className="data-table compact">
           <thead>
-            <tr><th>PKG</th><th>DESTINO</th><th>UNIDADES</th><th>CLIENTES</th><th>GUÍA</th><th>DESPACHO</th><th>ESTADO</th><th /></tr>
+            <tr><th>PKG</th><th>DESTINO</th><th>UNIDADES</th><th>CLIENTES</th><th>GUÍA</th><th>TRACKING</th><th>DESPACHO</th><th>ESTADO</th><th /></tr>
           </thead>
           <tbody>
             {pkgs.map((p) => (
@@ -58,6 +58,7 @@ export default async function CajasPage({ searchParams }: { searchParams: Promis
                 <td>{p.country}</td>
                 <td>{p.products.reduce((s, x) => s + x.quantity, 0)}</td>
                 <td>{new Set(p.products.map((x) => x.clientId)).size}</td>
+                <td className="mono small">{p.guide?.code ?? <span className="muted">—</span>}</td>
                 <td className="mono small">{p.trackingNumber ?? <span className="muted">—</span>}</td>
                 <td>{p.dispatch ? <Link href={`/despachos/${p.dispatch.id}`} className="link small">{dispatchCode(p.dispatch.number)} · {shortDate(p.dispatch.date)}</Link> : <span className="muted">—</span>}</td>
                 <td><StatusBadge meta={PKG_STATUS[p.status]} small /></td>

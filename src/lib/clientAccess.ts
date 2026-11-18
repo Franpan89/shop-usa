@@ -1,5 +1,6 @@
 import 'server-only';
 import prisma from '@/lib/prisma';
+import { OPERATOR } from '@/config/site';
 
 /**
  * Un correo identifica a una sola persona en todo el sistema: la sesión se resuelve por correo
@@ -11,6 +12,6 @@ export async function assertEmailFree(email: string, exceptClientId?: string): P
     prisma.user.findUnique({ where: { email }, select: { id: true } }),
     prisma.client.findUnique({ where: { email }, select: { id: true } }),
   ]);
-  if (staff) throw new Error('Ese correo pertenece a una cuenta del equipo de Shop USA');
+  if (staff) throw new Error(`Ese correo pertenece a una cuenta del equipo de ${OPERATOR}`);
   if (client && client.id !== exceptClientId) throw new Error('Ese correo ya está asociado a otro cliente');
 }

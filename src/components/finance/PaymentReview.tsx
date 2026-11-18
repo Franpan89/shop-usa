@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Modal from '@/components/Modal';
 import { toast } from '@/components/ui/Toast';
 import { approvePayment, rejectPayment } from '@/app/actions/payments';
+import { OPERATOR } from '@/config/site';
 
 /**
  * Verificación de un comprobante (2.9). Subir un comprobante NO significa que Shop USA recibió el
@@ -34,7 +35,7 @@ export default function PaymentReview({ paymentId, amount }: { paymentId: string
         <div className="stack">
           <div className="alert alert-info" style={{ marginBottom: 0 }}>
             <span>🏦</span>
-            <div>Confirma que el dinero ya está en la cuenta de Shop USA. Si el monto recibido es distinto al declarado por el cliente, corrígelo aquí.</div>
+            <div>Confirma que el dinero ya está en la cuenta de {OPERATOR}. Si el monto recibido es distinto al declarado por el cliente, corrígelo aquí.</div>
           </div>
           <div className="input-container">
             <label>Monto recibido ($)</label>

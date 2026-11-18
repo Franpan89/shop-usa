@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import prisma from '@/lib/prisma';
+import { DEMO_ACCOUNTS, isDemo, type DemoRole } from '@/lib/demo';
 
 export async function signIn(formData: FormData) {
   const email = (formData.get('email') as string)?.trim();
@@ -22,6 +23,18 @@ export async function signIn(formData: FormData) {
   // Authenticated with Supabase but not recognized in our app — don't leave a dangling session.
   await supabase.auth.signOut();
   return { error: 'Esta cuenta no está habilitada en el sistema' };
+}
+
+/** Acceso de un clic del demo: solo existe con DEMO_MODE=true y entra a una de las cuentas ficticias. */
+export async function demoSignIn(role: DemoRole) {
+  const account = isDemo() ? DEMO_ACCOUNTS[role] : undefined;
+  const password = process.env.DEMO_PASSWORD;
+  if (!account || !password) return { error: 'El acceso demo no está disponible' };
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signInWithPassword({ email: account.email, password });
+  if (error) return { error: 'No se pudo abrir la cuenta demo. Falta correr el seed del demo.' };
+  redirect(role === 'client' ? '/portal' : '/dashboard');
 }
 
 /**

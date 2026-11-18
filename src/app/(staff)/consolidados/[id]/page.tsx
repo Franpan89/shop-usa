@@ -9,6 +9,7 @@ import { getCountryRuleMap, invoiceBalanceOf, invoiceCode, pkgCode } from '@/lib
 import { Alert, AuthPill, Kpi, KpiGrid, PageHeader, Panel, StatusBadge, money, qty, shortDate } from '@/components/ui/kit';
 import Thumb from '@/components/ui/Thumb';
 import { CloseButton, DecisionToggle, ReopenButton, WeightEditor } from '../ConsolidationControls';
+import { OPERATOR } from '@/config/site';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,7 +58,7 @@ export default async function ConsolidationDetailPage({ params }: { params: Prom
         }
       />
 
-      {level === 'warning' && <Alert tone="warning">⚠️ <strong>Retención prolongada:</strong> lleva {days} días retenida (política: hasta {settings.retentionMaxDays} días). El sistema no bloquea ni despacha por su cuenta: la decisión es de Shop USA.</Alert>}
+      {level === 'warning' && <Alert tone="warning">⚠️ <strong>Retención prolongada:</strong> lleva {days} días retenida (política: hasta {settings.retentionMaxDays} días). El sistema no bloquea ni despacha por su cuenta: la decisión es de {OPERATOR}.</Alert>}
       {level === 'overdue' && <Alert tone="danger">⚠️ <strong>Superó los {settings.retentionMaxDays} días de retención</strong> ({days} días). Considera solicitar el despacho al cliente.</Alert>}
       {!c.client.shippingCategory && <Alert tone="warning">El cliente no tiene tarifa de envío asignada. <Link href={`/clientes/${c.clientId}`} className="link">Asígnala en su ficha</Link> para calcular el envío.</Alert>}
 

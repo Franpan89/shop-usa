@@ -7,6 +7,7 @@ import ImageUploader from '@/components/ui/ImageUploader';
 import { toast } from '@/components/ui/Toast';
 import { computePurchase, effectiveServiceRate } from '@/lib/domain/pricing';
 import { createOrder, updateOrder, type OrderItemInput } from '@/app/actions/orders';
+import { OPERATOR } from '@/config/site';
 
 export interface OrderFormClient extends PickableClient {
   serviceFeePercent: number;
@@ -171,8 +172,8 @@ export default function OrderForm({ clients, catalog, settings, initialClientId,
           <div className="glass-panel static panel">
             <div className="row" style={{ gap: 10 }}>
               {([
-                ['PERSONAL_SHOPPER', '🛍️ Personal Shopper', 'Shop USA busca y compra los productos'],
-                ['CART', '🛒 Compramos tu carrito', 'El cliente ya eligió; Shop USA paga por él'],
+                ['PERSONAL_SHOPPER', '🛍️ Personal Shopper', `${OPERATOR} busca y compra los productos`],
+                ['CART', '🛒 Compramos tu carrito', `El cliente ya eligió; ${OPERATOR} paga por él`],
               ] as const).map(([value, label, hint]) => (
                 <button
                   key={value}
@@ -338,7 +339,7 @@ export default function OrderForm({ clients, catalog, settings, initialClientId,
           <dt className="total-label">TOTAL A PAGAR</dt><dd className="total">{money(totals.total)}</dd>
         </dl>
         <p className="muted small" style={{ margin: '14px 0' }}>
-          Shop USA no adelanta dinero: el pedido queda <strong>pendiente de pago</strong> y solo se compra cuando el pago esté aprobado.
+          {OPERATOR} no adelanta dinero: el pedido queda <strong>pendiente de pago</strong> y solo se compra cuando el pago esté aprobado.
         </p>
         <button className="btn" style={{ width: '100%' }} disabled={pending || !clientId} onClick={submit}>
           {pending ? '⏳ Guardando…' : isEdit ? 'Guardar cambios' : 'Crear pedido'}

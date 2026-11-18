@@ -12,6 +12,7 @@ import { CreditModal, ManualChargeModal, RegisterPaymentModal } from '@/componen
 import Thumb from '@/components/ui/Thumb';
 import ClientForm from '../ClientForm';
 import { CustodyToggle, InvitePortalButton } from '../ClientPanels';
+import { OPERATOR } from '@/config/site';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,7 +106,7 @@ export default async function ClientDetailPage({ params }: Props) {
       />
 
       <KpiGrid>
-        <Kpi label="Saldo pendiente" value={money(account.pending)} tone={account.pending > 0.004 ? 'danger' : 'success'} hint={account.pending > 0.004 ? 'Debe a Shop USA' : 'Al día'} />
+        <Kpi label="Saldo pendiente" value={money(account.pending)} tone={account.pending > 0.004 ? 'danger' : 'success'} hint={account.pending > 0.004 ? `Debe a ${OPERATOR}` : 'Al día'} />
         <Kpi label="Saldo a favor" value={money(account.credit)} tone={account.credit > 0.004 ? 'success' : undefined} hint="Se usa solo en el próximo cargo" />
         <Kpi
           label="Recompensas por referidos"

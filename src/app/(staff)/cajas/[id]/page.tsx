@@ -7,7 +7,7 @@ import { dispatchCode, getCountryRuleMap, invoiceBalanceOf, pkgCode } from '@/li
 import { Alert, Empty, Kpi, KpiGrid, PageHeader, Panel, StatusBadge, qty } from '@/components/ui/kit';
 import Thumb from '@/components/ui/Thumb';
 import PrintButton from '../../clientes/[id]/estado-de-cuenta/PrintButton';
-import { PkgInfoForm, PkgItemActions, PkgPool, PkgStateButtons, PkgStatusControl, type PoolGroup } from '../PkgControls';
+import { PkgGuidePanel, PkgInfoForm, PkgItemActions, PkgPool, PkgStateButtons, PkgStatusControl, type PoolGroup } from '../PkgControls';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +19,7 @@ export default async function PkgDetailPage({ params }: { params: Promise<{ id: 
     where: { id },
     include: {
       dispatch: true,
+      guide: { select: { id: true, code: true, printCount: true } },
       products: {
         where: { status: { not: 'CANCELLED' } },
         include: { client: { select: { id: true, name: true, code: true } } },
@@ -115,6 +116,9 @@ export default async function PkgDetailPage({ params }: { params: Promise<{ id: 
         </div>
 
         <div className="stack">
+          <Panel title="Guía de la caja">
+            <PkgGuidePanel pkgId={pkg.id} guide={pkg.guide} />
+          </Panel>
           <Panel title="Datos del PKG">
             <PkgInfoForm pkgId={pkg.id} number={pkg.number} trackingNumber={pkg.trackingNumber} carrier={pkg.carrier} notes={pkg.notes} numberEditable={editable} />
           </Panel>

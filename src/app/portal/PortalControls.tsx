@@ -8,6 +8,7 @@ import CopyButton from '@/components/ui/CopyButton';
 import { toast } from '@/components/ui/Toast';
 import { portalSetDecision, portalSubmitTransfer } from '@/app/actions/portal';
 import { confirmCardCheckout, createCardCheckout } from '@/app/actions/cardPayments';
+import { OPERATOR } from '@/config/site';
 
 /** Retener / Despachar: por defecto se despacha; solo hay que actuar para retener (3.10). */
 export function PortalDecision({ consolidationId, decision, locked }: { consolidationId: string; decision: 'DISPATCH' | 'HOLD'; locked: boolean }) {
@@ -169,7 +170,7 @@ export function CardPayButton({
             <input type="number" inputMode="decimal" step="0.01" min="1" max={max.toFixed(2)} className="input-field pay-amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
             <span className="input-hint">Puedes pagar todo o una parte. Máximo ${max.toFixed(2)}.</span>
           </div>
-          <p className="muted small">🔒 Pagas en la página segura de Square. ShopUSA no ve ni guarda los datos de tu tarjeta. Tu pago se aplica a tu cuenta automáticamente.</p>
+          <p className="muted small">🔒 Pagas en la página segura de Square. {OPERATOR} no ve ni guarda los datos de tu tarjeta. Tu pago se aplica a tu cuenta automáticamente.</p>
           <div className="sheet-actions">
             <button className="btn btn-secondary" onClick={() => setOpen(false)}>Cancelar</button>
             <button

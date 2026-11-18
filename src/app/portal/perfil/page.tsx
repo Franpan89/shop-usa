@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { requirePortalClient } from '@/lib/auth';
 import EditProfileForm from './EditProfileForm';
+import { OPERATOR } from '@/config/site';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,7 @@ export default async function PortalPerfilPage() {
     <div>
       <h1 className="page-title" style={{ marginBottom: '4px' }}>Mi Perfil</h1>
       <p className="page-subtitle" style={{ marginBottom: '24px' }}>
-        Puedes actualizar tu teléfono y preferencia de entrega. Para otros cambios, contacta a ShopUSA.
+        Puedes actualizar tu teléfono y preferencia de entrega. Para otros cambios, contacta a {OPERATOR}.
       </p>
       <div className="glass-panel" style={{ padding: '32px' }}>
         <EditProfileForm client={{ phone: client.phone, deliveryMethod: client.deliveryMethod, deliveryAddress: client.deliveryAddress }} />

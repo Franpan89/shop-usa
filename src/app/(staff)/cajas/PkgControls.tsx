@@ -7,6 +7,8 @@ import ActionButton from '@/components/ui/ActionButton';
 import ActionForm from '@/components/ui/ActionForm';
 import Thumb from '@/components/ui/Thumb';
 import { toast } from '@/components/ui/Toast';
+import { printGuides } from '@/components/guides/printGuides';
+import { generatePkgGuide } from '@/app/actions/guides';
 import {
   assignProductsToPkg,
   closePkg,
@@ -24,6 +26,7 @@ export function NewPkgButton({ countries, suggested }: { countries: string[]; su
   const [open, setOpen] = useState(false);
   const [country, setCountry] = useState(countries[0] ?? '');
   const [number, setNumber] = useState(String(suggested));
+  const [withGuide, setWithGuide] = useState(true);
   const [pending, startTransition] = useTransition();
 
   return (
@@ -46,6 +49,13 @@ export function NewPkgButton({ countries, suggested }: { countries: string[]; su
               <span className="input-hint">Sugerido: PKG{suggested}. Puedes cambiarlo; no se permiten repetidos.</span>
             </div>
           </div>
+          <label className="check">
+            <input type="checkbox" checked={withGuide} onChange={(e) => setWithGuide(e.target.checked)} />
+            <span>
+              Crear también la guía de la caja
+              <span className="input-hint" style={{ display: 'block' }}>Etiqueta 4 × 6 con código de barras; lleva el mismo número del PKG ({`PKG${parseInt(number, 10) || suggested}`}).</span>
+            </span>
+          </label>
           <div className="row" style={{ justifyContent: 'flex-end' }}>
             <button className="btn btn-secondary" onClick={() => setOpen(false)}>Cancelar</button>
             <button
@@ -53,9 +63,9 @@ export function NewPkgButton({ countries, suggested }: { countries: string[]; su
               disabled={pending || !country}
               onClick={() =>
                 startTransition(async () => {
-                  const res = await createPkg({ country, number: parseInt(number, 10) || undefined });
+                  const res = await createPkg({ country, number: parseInt(number, 10) || undefined, createGuide: withGuide });
                   if (!res.ok) return toast(res.error, 'error');
-                  toast('PKG creado', 'success');
+                  toast(res.guideId ? 'PKG y guía creados' : 'PKG creado', 'success');
                   setOpen(false);
                   router.push(`/cajas/${res.pkgId}`);
                 })
@@ -271,7 +281,7 @@ export function PkgInfoForm({ pkgId, number, trackingNumber, carrier, notes, num
           </div>
         )}
         <div className="input-container">
-          <label>Número de guía</label>
+          <label>Tracking de la transportadora</label>
           <input name="trackingNumber" className="input-field" defaultValue={trackingNumber ?? ''} placeholder="Referencia de la transportadora" />
           <span className="input-hint">Con la guía consultas el tracking directamente en la transportadora.</span>
         </div>
@@ -286,5 +296,32 @@ export function PkgInfoForm({ pkgId, number, trackingNumber, carrier, notes, num
         <button type="submit" className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }}>Guardar</button>
       </div>
     </ActionForm>
+  );
+}
+
+/** Guía (etiqueta térmica) de la caja: imprimirla o generarla si el PKG se creó sin ella. */
+export function PkgGuidePanel({ pkgId, guide }: { pkgId: string; guide: { id: string; code: string; printCount: number } | null }) {
+  const router = useRouter();
+  if (!guide) {
+    return (
+      <div className="stack-sm">
+        <p className="muted small">Este PKG todavía no tiene guía. Al generarla toma el número del PKG.</p>
+        <ActionButton className="btn btn-secondary btn-sm" success="Guía creada" action={() => generatePkgGuide(pkgId)} onDone={() => router.refresh()}>
+          Generar guía
+        </ActionButton>
+      </div>
+    );
+  }
+  return (
+    <div className="stack-sm">
+      <div className="row-between">
+        <strong className="mono" style={{ fontSize: '1.1rem' }}>{guide.code}</strong>
+        <span className="muted small">{guide.printCount === 0 ? 'Sin imprimir' : `Impresa ${guide.printCount} vez(es)`}</span>
+      </div>
+      <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => { printGuides([guide.id]); router.refresh(); }}>
+        🖨️ Imprimir etiqueta
+      </button>
+      <p className="muted small">Etiqueta 4 × 6 con código de barras. El peso es la suma de los consolidados de la caja; se puede fijar a mano en “Ver guías”.</p>
+    </div>
   );
 }

@@ -11,6 +11,7 @@ import CasilleroReception from './CasilleroReception';
 import RecentRow from './RecentRow';
 
 import { nowMs } from '@/lib/clock';
+import { OPERATOR } from '@/config/site';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,7 +71,7 @@ export default async function RecepcionPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <PageHeader title="Recepción" subtitle="Cuando la mercancía llega a Shop USA solo se marca como recibida: pasa sola al consolidado abierto del cliente." />
+      <PageHeader title="Recepción" subtitle={`Cuando la mercancía llega a ${OPERATOR} solo se marca como recibida: pasa sola al consolidado abierto del cliente.`} />
       <Tabs
         items={[
           { href: '/recepcion?vista=comprados', label: 'Por recibir (PS y Carrito)', count: awaitingCount, active: vista === 'comprados' },

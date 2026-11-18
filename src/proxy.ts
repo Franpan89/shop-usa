@@ -11,7 +11,8 @@ const PUBLIC_PREFIX_PATHS = ['/auth/callback', '/auth/confirm', '/api/cron', '/a
 
 export async function proxy(request: NextRequest) {
   const hostname = request.headers.get('host') || '';
-  const isAppDomain = hostname.startsWith('app.');
+  // La instancia demo no tiene sitio de marketing: su raíz es el acceso al sistema.
+  const isAppDomain = hostname.startsWith('app.') || process.env.DEMO_MODE === 'true';
 
   // shopusaenvios.com serves the marketing site at '/'; app.shopusaenvios.com
   // serves this same deployment for the internal app, so its bare root isn't

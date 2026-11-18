@@ -8,6 +8,8 @@ import { requireStaff } from '@/lib/auth';
 import { audit, getTenantId, inTransaction } from '@/lib/tenant';
 import { getCountryRuleMap, invoiceBalanceOf, suggestNextPkgNumber } from '@/lib/logistics';
 import { isDeliveryAuthorized, isDispatchAuthorized, PKG_TO_PRODUCT_STATUS } from '@/lib/domain/flow';
+import { guideCode } from '@/lib/domain/guides';
+import { ensurePkgGuide } from '@/lib/guides';
 import { sendReadyForPickupEmail, sendShippedEmail } from '@/lib/email';
 
 function revalidateLogistics(clientIds: string[] = []) {
@@ -18,21 +20,29 @@ function revalidateLogistics(clientIds: string[] = []) {
 
 // ── PKG (Etapa 8) ───────────────────────────────────────────────────────────
 
-export const createPkg = safe(async function createPkg(input: { country: string; number?: number }) {
+/** Con `createGuide` la guía del PKG (etiqueta térmica, mismo número) se crea en la misma transacción. */
+export const createPkg = safe(async function createPkg(input: { country: string; number?: number; createGuide?: boolean }) {
   const user = await requireStaff();
   const tenantId = await getTenantId();
   if (!input.country?.trim()) throw new Error('Selecciona el país de destino');
 
-  const pkg = await inTransaction(async (tx) => {
+  const { pkg, guideId } = await inTransaction(async (tx) => {
     const number = input.number && input.number > 0 ? Math.floor(input.number) : await suggestNextPkgNumber(tx);
     const taken = await tx.pkg.findUnique({ where: { tenantId_number: { tenantId, number } } });
     if (taken) throw new Error(`Ya existe el PKG${number}`);
     const created = await tx.pkg.create({ data: { tenantId, number, country: input.country.trim() } });
     await audit(tx, { userName: user.name, action: 'pkg.create', entity: 'Pkg', entityId: created.id, data: { number } });
-    return created;
+    let guideId: string | null = null;
+    if (input.createGuide) {
+      const { guide } = await ensurePkgGuide(tx, created, user.name);
+      guideId = guide.id;
+      await audit(tx, { userName: user.name, action: 'guide.create', entity: 'Guide', entityId: guide.id, data: { code: guide.code } });
+    }
+    return { pkg: created, guideId };
   });
   revalidateLogistics();
-  return { success: true, pkgId: pkg.id };
+  revalidatePath('/guias');
+  return { success: true, pkgId: pkg.id, guideId };
 });
 
 export const updatePkgInfo = safe(async function updatePkgInfo(
@@ -51,16 +61,23 @@ export const updatePkgInfo = safe(async function updatePkgInfo(
     number = Math.floor(input.number);
   }
 
-  await prisma.pkg.update({
-    where: { id: pkgId },
-    data: {
-      number,
-      trackingNumber: input.trackingNumber?.trim() || null,
-      carrier: input.carrier?.trim() || null,
-      notes: input.notes?.trim() || null,
-    },
+  await inTransaction(async (tx) => {
+    await tx.pkg.update({
+      where: { id: pkgId },
+      data: {
+        number,
+        trackingNumber: input.trackingNumber?.trim() || null,
+        carrier: input.carrier?.trim() || null,
+        notes: input.notes?.trim() || null,
+      },
+    });
+    // La guía de la caja siempre lleva el número del PKG.
+    if (number !== pkg.number) {
+      await tx.guide.updateMany({ where: { pkgId }, data: { number, code: guideCode('PKG', number) } });
+    }
   });
   revalidateLogistics();
+  revalidatePath('/guias');
   revalidatePath(`/cajas/${pkgId}`);
   return { success: true };
 });
