@@ -1,6 +1,18 @@
 /* Etiqueta térmica 4 x 6 pulgadas: blanco y negro, sin colores ni sombras al imprimir.
-   Cada zona tiene su altura: el texto largo se recorta dentro de su zona y nunca invade la siguiente. */
+   El código de barras mide siempre lo mismo; el espacio que sobra se reparte entre remitente,
+   destinatario y descripción (letra más grande). Si el texto es muy largo, la etiqueta pasa a
+   modo "dense" (letra más chica) y lo que no cabe se recorta dentro de su zona. */
 .label {
+  --f-cap: 7.5pt;
+  --f-sender: 12pt;
+  --f-to: 14.5pt;
+  --f-line: 10pt;
+  --f-place: 14pt;
+  --f-val: 18pt;
+  --f-desc: 11.5pt;
+  --desc-lines: 5;
+  --pad: 0.09in;
+
   box-sizing: border-box;
   width: 4in;
   height: 6in;
@@ -16,6 +28,18 @@
   break-after: page;
   page-break-after: always;
   position: relative;
+}
+
+.dense {
+  --f-cap: 7pt;
+  --f-sender: 11pt;
+  --f-to: 13pt;
+  --f-line: 9pt;
+  --f-place: 12.5pt;
+  --f-val: 17pt;
+  --f-desc: 9.5pt;
+  --desc-lines: 3;
+  --pad: 0.05in;
 }
 
 .label:last-child {
@@ -61,14 +85,9 @@
   print-color-adjust: exact;
 }
 
-/* Código de barras grande y su número, centrados */
-/* El código de barras absorbe el espacio libre (de 0.6 a 1.8 pulgadas): sin huecos entre bloques. */
+/* Código de barras: tamaño fijo (0.72 in de barras) y su número, centrados */
 .barcode {
-  flex: 1 1 0;
-  min-height: 1.08in;
-  max-height: 2.3in;
-  display: flex;
-  flex-direction: column;
+  flex: none;
   border-top: 1.5px solid #000;
   padding: 0.07in 0 0.03in;
   text-align: center;
@@ -76,12 +95,10 @@
 
 .bars {
   position: relative;
-  flex: 1 1 0;
-  min-height: 0.6in;
+  height: 0.72in;
 }
 
 .codeText {
-  flex: none;
   font-family: 'Courier New', Courier, monospace;
   font-weight: 700;
   font-size: 21pt;
@@ -90,42 +107,47 @@
   margin-top: 0.02in;
 }
 
+/* Bloques que se reparten el espacio libre; su contenido queda centrado en la altura que les toca */
 .block {
-  flex: none;
-  border-top: 1.5px solid #000;
-  padding: 0.05in 0.04in 0.05in;
-}
-
-/* El destinatario ocupa lo que necesita; solo se recorta si el texto no cabe */
-.dest {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  border-top: 1.5px solid #000;
+  padding: var(--pad) 0.04in;
+}
+
+.sender {
+  flex-grow: 1;
+}
+
+.dest {
+  flex-grow: 1.4;
 }
 
 .cap {
   flex: none;
-  font-size: 7pt;
+  font-size: var(--f-cap);
   letter-spacing: 0.08em;
   margin-bottom: 0.01in;
 }
 
 .name {
-  font-size: 11pt;
+  flex: none;
+  font-size: var(--f-sender);
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 
 .nameTo {
-  flex: none;
-  font-size: 13pt;
+  font-size: var(--f-to);
   line-height: 1.15;
 }
 
 .line {
-  font-size: 9pt;
+  font-size: var(--f-line);
   overflow-wrap: anywhere;
 }
 
@@ -152,14 +174,14 @@
   line-clamp: 2;
 }
 
-/* Destino siempre a la vista, al pie del bloque del destinatario */
+/* Destino siempre a la vista, debajo de la dirección */
 .destination {
   flex: none;
-  padding-top: 0.04in;
+  padding-top: calc(var(--pad) * 0.7);
 }
 
 .place {
-  font-size: 12.5pt;
+  font-size: var(--f-place);
   line-height: 1.12;
   font-weight: 700;
 }
@@ -188,7 +210,7 @@
 }
 
 .val {
-  font-size: 17pt;
+  font-size: var(--f-val);
   font-weight: 700;
   line-height: 1.1;
   white-space: nowrap;
@@ -204,22 +226,26 @@
   letter-spacing: 0.03em;
 }
 
-/* Descripción: zona de altura fija, hasta 3 renglones */
+/* Descripción: la zona que más espacio recibe; letra grande y hasta 5 renglones */
 .descBlock {
-  flex: none;
-  height: 0.66in;
+  flex: 1.8 1 auto;
+  min-height: 0.66in;
   box-sizing: border-box;
-  padding: 0.04in 0.04in 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--pad) 0.04in;
 }
 
 .desc {
-  font-size: 9.5pt;
+  font-size: var(--f-desc);
   font-weight: 700;
+  line-height: 1.22;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+  -webkit-line-clamp: var(--desc-lines);
+  line-clamp: var(--desc-lines);
   overflow: hidden;
   overflow-wrap: anywhere;
 }

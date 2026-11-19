@@ -6,6 +6,19 @@ import styles from './GuideLabel.module.css';
 /** Logo de las guías (las IFLWH salen todas con la marca IFL Courier). 210 x 116 px. */
 const LOGO = { src: '/brand/ifl-courier.png', width: 210, height: 116 };
 
+/** Con nombres o direcciones muy largos la etiqueta usa letra más chica para que todo quepa. */
+function isDense(l: LabelData): boolean {
+  return (
+    l.retained ||
+    l.senderName.length > 36 ||
+    l.toName.length > 34 ||
+    l.destination.length > 30 ||
+    l.senderLines.join(' ').length > 70 ||
+    l.toLines.join(' ').length > 100 ||
+    l.description.length > 95
+  );
+}
+
 /**
  * Una etiqueta de guía 4x6 (impresora térmica). Componente de servidor, sin estado.
  * De arriba abajo: marca y país · código de barras · remitente · destinatario y destino ·
@@ -15,7 +28,7 @@ export default function GuideLabel({ label }: { label: LabelData }) {
   const weight = label.weightLb != null ? `${label.weightEstimated ? '~' : ''}${label.weightLb.toFixed(2)}` : '—';
 
   return (
-    <section className={styles.label} data-guide={label.code}>
+    <section className={`${styles.label} ${isDense(label) ? styles.dense : ''}`} data-guide={label.code}>
       <header className={styles.head}>
         <Image className={styles.logo} src={LOGO.src} width={LOGO.width} height={LOGO.height} alt="IFL Courier" unoptimized priority />
         <div className={styles.tag}>({label.countryTag})</div>
@@ -30,7 +43,7 @@ export default function GuideLabel({ label }: { label: LabelData }) {
         <div className={styles.codeText}>{label.code}</div>
       </div>
 
-      <div className={styles.block}>
+      <div className={`${styles.block} ${styles.sender}`}>
         <div className={styles.cap}>REMITENTE</div>
         <div className={`${styles.name} ${styles.clamp1}`}>{label.senderName}</div>
         {label.senderLines.map((l) => (
