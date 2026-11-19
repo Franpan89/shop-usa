@@ -8,21 +8,48 @@ import {
   countryTag,
   destinationLine,
   guideCode,
+  guideRef,
   normalizeGuideFields,
+  normalizePrefix,
+  refNumberOf,
   shipperIsIncomplete,
   upper,
 } from './guides';
 
 describe('numeración de guías', () => {
-  it('la serie IFL arranca en IFLWH00100 y rellena a 5 dígitos', () => {
-    assert.equal(guideCode('IFL', IFL_GUIDE_START), 'IFLWH00100');
-    assert.equal(guideCode('IFL', 431), 'IFLWH00431');
-    assert.equal(guideCode('IFL', 12345), 'IFLWH12345');
+  it('toda guía es IFLWH: arranca en IFLWH00100 y rellena a 5 dígitos', () => {
+    assert.equal(guideCode(IFL_GUIDE_START), 'IFLWH00100');
+    assert.equal(guideCode(431), 'IFLWH00431');
+    assert.equal(guideCode(12345), 'IFLWH12345');
+  });
+});
+
+describe('identificadores (tracking de la etiqueta)', () => {
+  it('PKG lleva el número de la caja tal cual; los demás van a 3 dígitos', () => {
+    assert.equal(guideRef('PKG', 501), 'PKG501');
+    assert.equal(guideRef('PKG', 1203), 'PKG1203');
+    assert.equal(guideRef('JM', 1), 'JM001');
+    assert.equal(guideRef('JM', 42), 'JM042');
+    assert.equal(guideRef('JM', 1500), 'JM1500');
   });
 
-  it('la guía de un PKG lleva el mismo número que la caja', () => {
-    assert.equal(guideCode('PKG', 500), 'PKG500');
-    assert.equal(guideCode('PKG', 1203), 'PKG1203');
+  it('un identificador nuevo: 2 a 6 caracteres, empieza con letra, en mayúsculas', () => {
+    assert.equal(normalizePrefix(' jm '), 'JM');
+    assert.equal(normalizePrefix('ab1'), 'AB1');
+    assert.equal(normalizePrefix('J'), null);
+    assert.equal(normalizePrefix('1AB'), null);
+    assert.equal(normalizePrefix('ABCDEFG'), null);
+    assert.equal(normalizePrefix('A-B'), null);
+    assert.equal(normalizePrefix(''), null);
+  });
+
+  it('el número de PKG es un entero de 1 a 99999', () => {
+    assert.equal(refNumberOf('501'), 501);
+    assert.equal(refNumberOf(7), 7);
+    assert.equal(refNumberOf('0'), null);
+    assert.equal(refNumberOf('1.5'), null);
+    assert.equal(refNumberOf(''), null);
+    assert.equal(refNumberOf('100000'), null);
   });
 });
 
@@ -35,7 +62,6 @@ describe('validación de una guía', () => {
     assert.equal(r.value.contents, 'ZAPATOS PRENDAS DE VESTIR');
     assert.equal(r.value.weightLb, 8.25);
     assert.equal(r.value.declaredValue, 200);
-    assert.equal(r.value.finalDeliveryAddress, null);
   });
 
   it('acepta coma decimal', () => {
@@ -51,16 +77,6 @@ describe('validación de una guía', () => {
     assert.equal(normalizeGuideFields({ ...base, weightLb: 0 }).ok, false);
     assert.equal(normalizeGuideFields({ ...base, weightLb: '' }).ok, false);
     assert.equal(normalizeGuideFields({ ...base, declaredValue: -3 }).ok, false);
-  });
-
-  it('la entrega en otra dirección exige la dirección; sin marcar se ignora', () => {
-    assert.equal(normalizeGuideFields({ ...base, deliverElsewhere: true, finalDeliveryAddress: '  ' }).ok, false);
-    const withAddr = normalizeGuideFields({ ...base, deliverElsewhere: true, finalDeliveryAddress: 'av. loja y solano' });
-    assert.ok(withAddr.ok);
-    assert.equal(withAddr.value.finalDeliveryAddress, 'AV. LOJA Y SOLANO');
-    const unchecked = normalizeGuideFields({ ...base, deliverElsewhere: false, finalDeliveryAddress: 'otra' });
-    assert.ok(unchecked.ok);
-    assert.equal(unchecked.value.finalDeliveryAddress, null);
   });
 });
 

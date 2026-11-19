@@ -39,6 +39,7 @@ model Tenant {
   shippers           Shipper[]
   consignees         Consignee[]
   guides             Guide[]
+  guideIdentifiers   GuideIdentifier[]
 }
 
 model User {
@@ -785,6 +786,9 @@ model Expense {
 // Dos series: IFL (IFLWH00100, 00101…, con remitente y destinatario) y PKG (la guía de cada caja, mismo número que el PKG).
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Todas las guías se numeran IFLWH00100, 00101… (contador único). IFL = envío con remitente y
+// destinatario; PKG = guía de la caja (se crea con el PKG). El identificador que se imprime
+// como tracking (PKG501, JM001…) vive en refPrefix/refNumber.
 enum GuideSeries {
   IFL
   PKG
@@ -864,9 +868,15 @@ model Guide {
   tenant   Tenant @relation(fields: [tenantId], references: [id])
 
   series GuideSeries
-  number Int
-  code   String // IFLWH00100 · PKG500
+  number Int // consecutivo único: IFLWH00100 = 100
+  code   String // IFLWH00100
   status GuideStatus @default(CREATED)
+
+  // Identificador que se imprime como tracking: PKG501 (la caja donde viaja) o el de otro
+  // identificador adicional (JM001 = primer paquete de "JM"). Varias guías pueden compartir PKG.
+  refPrefix String?
+  refNumber Int?
+  refCode   String?
 
   // Serie IFL: remitente y destinatario. Serie PKG: solo el PKG.
   shipperId   String?
@@ -882,7 +892,7 @@ model Guide {
   declaredValue        Float?
   clientTracking       String?
   notes                String?
-  finalDeliveryAddress String? // si la entrega final es en otra dirección
+  finalDeliveryAddress String? // en desuso: la etiqueta usa la dirección del destinatario
 
   printCount    Int       @default(0)
   lastPrintedAt DateTime?
@@ -898,4 +908,19 @@ model Guide {
   @@index([createdAt])
   @@index([shipperId])
   @@index([consigneeId])
+  @@index([refCode])
+}
+
+/// Identificadores adicionales a PKG para las guías (JM, ABC…). PKG es fijo y no se guarda aquí.
+model GuideIdentifier {
+  id          String  @id @default(cuid())
+  tenantId    String
+  tenant      Tenant  @relation(fields: [tenantId], references: [id])
+  prefix      String // JM
+  description String?
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, prefix])
 }

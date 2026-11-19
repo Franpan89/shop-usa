@@ -1,16 +1,17 @@
-/* Etiqueta térmica 4 x 6 pulgadas: blanco y negro, sin colores ni sombras al imprimir. */
+/* Etiqueta térmica 4 x 6 pulgadas: blanco y negro, sin colores ni sombras al imprimir.
+   Cada zona tiene su altura: el texto largo se recorta dentro de su zona y nunca invade la siguiente. */
 .label {
   box-sizing: border-box;
   width: 4in;
   height: 6in;
-  padding: 0.1in 0.12in;
+  padding: 0.1in 0.12in 0.08in;
   display: flex;
   flex-direction: column;
   background: #fff;
   color: #000;
   font-family: Arial, Helvetica, sans-serif;
   font-size: 9pt;
-  line-height: 1.25;
+  line-height: 1.2;
   overflow: hidden;
   break-after: page;
   page-break-after: always;
@@ -22,58 +23,93 @@
   page-break-after: auto;
 }
 
+/* Marca y país */
 .head {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 0.56in;
-  padding-bottom: 0.04in;
+  height: 0.6in;
+  padding-bottom: 0.02in;
 }
 
-.logo img {
-  filter: grayscale(1) brightness(0.5) contrast(2.2);
+.logo {
+  height: 0.6in;
+  width: auto;
+  display: block;
+  /* La térmica imprime en negro: el rojo y el azul pasan a negro fuerte; el fondo blanco se queda blanco. */
+  filter: grayscale(1) contrast(2.4);
 }
 
 .tag {
-  font-size: 20pt;
+  font-size: 24pt;
   font-weight: 700;
   letter-spacing: 0.02em;
 }
 
 .banner {
+  flex: none;
   background: #000;
   color: #fff;
   text-align: center;
   font-weight: 700;
-  font-size: 10pt;
-  letter-spacing: 0.06em;
-  padding: 0.04in 0;
+  font-size: 9.5pt;
+  letter-spacing: 0.05em;
+  padding: 0.03in 0;
   margin-bottom: 0.04in;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
 
-.block {
+/* Código de barras grande y su número, centrados */
+.barcode {
+  flex: none;
   border-top: 1.5px solid #000;
-  padding: 0.06in 0.04in;
+  padding: 0.07in 0 0.03in;
+  text-align: center;
 }
 
-.grow {
-  flex: 1 1 auto;
+.codeText {
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: 700;
+  font-size: 21pt;
+  line-height: 1.1;
+  letter-spacing: 0.08em;
+  margin-top: 0.02in;
+}
+
+.block {
+  flex: none;
+  border-top: 1.5px solid #000;
+  padding: 0.05in 0.04in 0.05in;
+}
+
+/* El destinatario toma el espacio que sobra */
+.dest {
+  flex: 1 1 0;
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .cap {
-  font-size: 7.5pt;
+  flex: none;
+  font-size: 7pt;
   letter-spacing: 0.08em;
-  margin-bottom: 0.02in;
+  margin-bottom: 0.01in;
 }
 
-.big {
-  font-size: 11.5pt;
+.name {
+  font-size: 11pt;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.nameTo {
+  flex: none;
+  font-size: 13pt;
+  line-height: 1.15;
 }
 
 .line {
@@ -81,62 +117,88 @@
   overflow-wrap: anywhere;
 }
 
-.clamp {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+.toLines {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
 }
 
-.meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  font-size: 9.5pt;
+.clamp1,
+.clamp2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.mono {
-  font-family: 'Courier New', Courier, monospace;
+.clamp1 {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.clamp2 {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* Destino siempre a la vista, al pie del bloque del destinatario */
+.destination {
+  flex: none;
+  padding-top: 0.04in;
+}
+
+.place {
+  font-size: 12.5pt;
+  line-height: 1.12;
   font-weight: 700;
-  letter-spacing: 0.04em;
 }
 
-.barcode {
-  border-top: 1.5px solid #000;
-  padding: 0.08in 0 0.04in;
-  text-align: center;
-}
-
-.codeText {
-  font-family: 'Courier New', Courier, monospace;
-  font-weight: 700;
-  font-size: 13pt;
-  letter-spacing: 0.1em;
-  margin-top: 0.02in;
-}
-
-.foot {
+/* Peso · piezas · tracking */
+.info {
+  flex: none;
   display: grid;
-  grid-template-columns: 1fr 1.35fr;
+  grid-template-columns: 1fr 0.7fr 1.5fr;
   border-top: 1.5px solid #000;
   border-bottom: 1.5px solid #000;
 }
 
-.footL,
-.footR {
-  padding: 0.06in 0.06in 0.07in;
-  min-height: 0.8in;
+.cell {
+  padding: 0.04in 0.05in 0.05in;
+  border-right: 1.5px solid #000;
+  min-width: 0;
 }
 
-.footL {
-  border-right: 1.5px solid #000;
+.cell:last-child {
+  border-right: none;
+}
+
+.cellWide {
+  padding-left: 0.08in;
 }
 
 .val {
-  font-size: 16pt;
+  font-size: 17pt;
   font-weight: 700;
   line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.unit {
+  font-size: 10pt;
+}
+
+.mono {
+  font-family: 'Courier New', Courier, monospace;
+  letter-spacing: 0.03em;
+}
+
+/* Descripción: zona de altura fija, hasta 3 renglones */
+.descBlock {
+  flex: none;
+  height: 0.66in;
+  box-sizing: border-box;
+  padding: 0.04in 0.04in 0;
+  overflow: hidden;
 }
 
 .desc {
@@ -150,7 +212,15 @@
   overflow-wrap: anywhere;
 }
 
-.small {
+/* Fecha y valor declarado */
+.strip {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.1in;
+  border-top: 1.5px solid #000;
+  padding: 0.03in 0.04in 0;
   font-size: 8pt;
-  margin-top: 0.02in;
+  white-space: nowrap;
 }
