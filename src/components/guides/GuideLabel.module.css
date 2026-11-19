@@ -62,14 +62,26 @@
 }
 
 /* Código de barras grande y su número, centrados */
+/* El código de barras absorbe el espacio libre (de 0.6 a 1.8 pulgadas): sin huecos entre bloques. */
 .barcode {
-  flex: none;
+  flex: 1 1 0;
+  min-height: 1.08in;
+  max-height: 2.3in;
+  display: flex;
+  flex-direction: column;
   border-top: 1.5px solid #000;
   padding: 0.07in 0 0.03in;
   text-align: center;
 }
 
+.bars {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0.6in;
+}
+
 .codeText {
+  flex: none;
   font-family: 'Courier New', Courier, monospace;
   font-weight: 700;
   font-size: 21pt;
@@ -84,9 +96,9 @@
   padding: 0.05in 0.04in 0.05in;
 }
 
-/* El destinatario toma el espacio que sobra */
+/* El destinatario ocupa lo que necesita; solo se recorta si el texto no cabe */
 .dest {
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-height: 0;
   overflow: hidden;
   display: flex;
@@ -118,7 +130,7 @@
 }
 
 .toLines {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
   overflow: hidden;
 }

@@ -24,7 +24,9 @@ export default function GuideLabel({ label }: { label: LabelData }) {
       {label.retained && <div className={styles.banner}>RETENIDA EN BODEGA · NO DESPACHAR</div>}
 
       <div className={styles.barcode}>
-        <Barcode128 value={label.code} heightIn={0.72} />
+        <div className={styles.bars}>
+          <Barcode128 value={label.code} fill />
+        </div>
         <div className={styles.codeText}>{label.code}</div>
       </div>
 

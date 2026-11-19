@@ -77,12 +77,12 @@ export default async function PortalEstadoDeCuenta({ searchParams }: { searchPar
 
       <section>
         <h2 className="list-title">Movimientos</h2>
-        <p className="item-sub" style={{ margin: '-6px 0 10px' }}>Cargos en rojo, pagos en verde.</p>
+        <p className="item-sub" style={{ margin: '-6px 0 10px' }}>Los más recientes primero. Cargos en rojo, pagos en verde.</p>
         {rows.length === 0 ? (
           <div className="glass-panel static"><Empty icon="📋" title="Todavía no hay movimientos" /></div>
         ) : (
           <div className="item-list">
-            {rows.map((r) => (
+            {[...rows].reverse().map((r) => (
               <div key={r.key} className="item-card compact" style={r.informational ? { opacity: 0.55 } : undefined}>
                 <div className="item-top">
                   <div>

@@ -29,6 +29,8 @@ export default async function EstadoDeCuentaPage({ params }: Props) {
     prisma.invoice.findMany({ where: { clientId: id, status: { not: 'CANCELLED' } }, orderBy: [{ issueDate: 'desc' }, { number: 'desc' }] }),
   ]);
 
+  // El saldo de cada fila se calcula en orden cronológico; en pantalla se muestran los últimos primero.
+  const latestFirst = [...rows].reverse();
   const openInvoices = invoices.filter((i) => i.status === 'PENDING' || i.status === 'PARTIAL').reverse();
 
   return (
@@ -83,7 +85,7 @@ export default async function EstadoDeCuentaPage({ params }: Props) {
           )}
         </Panel>
 
-        <Panel title="Movimientos" subtitle="Cronológico, con el saldo después de cada movimiento. Positivo = debe · negativo = saldo a favor." flush>
+        <Panel title="Movimientos" subtitle="Los más recientes primero, con el saldo después de cada movimiento. Positivo = debe · negativo = saldo a favor." flush>
           {rows.length === 0 ? (
             <Empty icon="📋" title="Todavía no hay movimientos" />
           ) : (
@@ -93,7 +95,7 @@ export default async function EstadoDeCuentaPage({ params }: Props) {
                   <tr><th>FECHA</th><th>MOVIMIENTO</th><th>REFERENCIA</th><th className="text-right">CARGO</th><th className="text-right">PAGO / CRÉDITO</th><th className="text-right">SALDO</th></tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => (
+                  {latestFirst.map((r) => (
                     <tr key={r.key} style={r.informational ? { opacity: 0.55 } : undefined}>
                       <td className="nowrap">{shortDate(r.date)}</td>
                       <td>

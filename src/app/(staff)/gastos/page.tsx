@@ -5,6 +5,8 @@ import { INVOICE_TYPE } from '@/lib/domain/flow';
 import { invoiceCode } from '@/lib/logistics';
 import { getCountryRules } from '@/lib/tenant';
 import { signedReceiptUrls } from '@/lib/storage';
+import { pageInfo } from '@/lib/domain/pagination';
+import Pagination from '@/components/ui/Pagination';
 import { CATEGORY_LABEL } from './categories';
 import { DeleteExpenseButton, ExpenseModal, PrintButton, type ExpenseRow } from './ExpenseManager';
 
@@ -12,9 +14,13 @@ export const dynamic = 'force-dynamic';
 
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
-export default async function ContabilidadPage({ searchParams }: { searchParams: Promise<{ desde?: string; hasta?: string; categoria?: string }> }) {
+export default async function ContabilidadPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ desde?: string; hasta?: string; categoria?: string; pagina?: string; pagina_cxc?: string }>;
+}) {
   await requireStaff();
-  const { desde, hasta, categoria } = await searchParams;
+  const { desde, hasta, categoria, pagina, pagina_cxc } = await searchParams;
   const tenant = await prisma.tenant.findFirst();
   const countries = tenant ? (await getCountryRules()).map((c) => c.name) : [];
 
@@ -63,6 +69,13 @@ export default async function ContabilidadPage({ searchParams }: { searchParams:
     adjustedAmount: e.adjustedAmount,
     receipts: e.receiptPaths.map((path) => ({ path, url: receiptUrls.get(path) ?? null, isPdf: path.endsWith('.pdf') })),
   }));
+  // Tablas largas: 10 filas por página en pantalla; al imprimir salen todas.
+  const expensePage = pageInfo(rows.length, pagina);
+  const pending = invoices
+    .filter((i) => i.total - i.paidAmount > 0.004)
+    .sort((a, b) => b.total - b.paidAmount - (a.total - a.paidAmount));
+  const pendingPage = pageInfo(pending.length, pagina_cxc);
+  const filterParams = { desde, hasta, categoria: categoryFilter };
   const utilidad = totalVentas - totalGastos;
   const utilidadNeta = totalCobrado - totalGastos;
 
@@ -73,6 +86,7 @@ export default async function ContabilidadPage({ searchParams }: { searchParams:
 
   return (
     <>
+      <style>{`.screen-hidden{display:none}@media print{.screen-hidden{display:table-row}}`}</style>
       <header className="page-header">
         <div>
           <h1 className="page-title">Contabilidad</h1>
@@ -188,8 +202,8 @@ export default async function ContabilidadPage({ searchParams }: { searchParams:
             </tr>
           </thead>
           <tbody>
-            {rows.map((expense) => (
-              <tr key={expense.id}>
+            {rows.map((expense, index) => (
+              <tr key={expense.id} className={index >= expensePage.start && index < expensePage.end ? undefined : 'screen-hidden'}>
                 <td>{new Date(`${expense.date}T12:00:00`).toLocaleDateString('es-ES')}</td>
                 <td>
                   <span className={`badge ${
@@ -237,6 +251,7 @@ export default async function ContabilidadPage({ searchParams }: { searchParams:
           </tbody>
         </table>
       </div>
+      <Pagination info={expensePage} basePath="/gastos" params={{ ...filterParams, pagina_cxc }} />
 
       {/* --- Por Cobrar Table --- */}
       {totalPorCobrar > 0 && (
@@ -260,11 +275,8 @@ export default async function ContabilidadPage({ searchParams }: { searchParams:
                 </tr>
               </thead>
               <tbody>
-                {invoices
-                  .filter((i) => i.total - i.paidAmount > 0.004)
-                  .sort((a, b) => (b.total - b.paidAmount) - (a.total - a.paidAmount))
-                  .map((invoice) => (
-                    <tr key={invoice.id}>
+                {pending.map((invoice, index) => (
+                    <tr key={invoice.id} className={index >= pendingPage.start && index < pendingPage.end ? undefined : 'screen-hidden'}>
                       <td>
                         <Link href={`/clientes/${invoice.clientId}/estado-de-cuenta`} className="link">{invoice.client.name}</Link><br/>
                         <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{invoice.client.code}</span>
@@ -280,6 +292,7 @@ export default async function ContabilidadPage({ searchParams }: { searchParams:
               </tbody>
             </table>
           </div>
+          <Pagination info={pendingPage} basePath="/gastos" params={{ ...filterParams, pagina }} paramName="pagina_cxc" />
         </>
       )}
     </>
